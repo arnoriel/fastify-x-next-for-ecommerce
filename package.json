@@ -1,0 +1,38 @@
+{
+  "name": "ecommerce",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@10.9.7",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "setup": "node scripts/setup-env.mjs",
+    "dev": "turbo run dev",
+    "dev:web": "turbo run dev --filter=@ecommerce/web",
+    "dev:api": "turbo run dev --filter=@ecommerce/api",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "npm run db:generate -w @ecommerce/api",
+    "db:migrate": "npm run db:migrate -w @ecommerce/api",
+    "db:seed": "npm run db:seed -w @ecommerce/api",
+    "db:studio": "npm run db:studio -w @ecommerce/api",
+    "db:reset": "npm run db:reset -w @ecommerce/api",
+    "infra:up": "npm run infra:up -w @ecommerce/api",
+    "infra:search": "npm run infra:search -w @ecommerce/api",
+    "infra:down": "npm run infra:down -w @ecommerce/api",
+    "infra:reset": "npm run infra:reset -w @ecommerce/api",
+    "infra:ps": "npm run infra:ps -w @ecommerce/api",
+    "infra:logs": "npm run infra:logs -w @ecommerce/api"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "turbo": "^2.11.2",
+    "typescript": "^5.9.3"
+  }
+}
