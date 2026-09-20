@@ -4,6 +4,8 @@ import { env } from "./env";
 import { closeDb } from "./lib/db";
 import { attachRedisLogging, closeRedis } from "./lib/redis";
 import { authRoutes } from "./modules/auth/routes";
+import { categoryRoutes } from "./modules/catalog/category.routes";
+import { productRoutes } from "./modules/catalog/product.routes";
 import { authPlugin } from "./plugins/auth";
 import { errorHandlerPlugin } from "./plugins/error-handler";
 import { healthRoutes } from "./routes/health";
@@ -36,6 +38,8 @@ export async function buildApp() {
   await app.register(healthRoutes);
   await app.register(authPlugin);
   await app.register(authRoutes);
+  await app.register(categoryRoutes);
+  await app.register(productRoutes);
 
   app.addHook("onClose", async () => {
     await Promise.allSettled([closeDb(), closeRedis()]);

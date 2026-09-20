@@ -28,6 +28,13 @@ const baseSchema = z.object({
   ),
   GOOGLE_CLIENT_ID: optionalStr,
   GOOGLE_CLIENT_SECRET: optionalStr,
+  // --- Cloudflare R2 (S3-compatible) — upload gambar produk (T-04) ---
+  R2_ACCOUNT_ID: z.string().min(1),
+  R2_ACCESS_KEY_ID: z.string().min(1),
+  R2_SECRET_ACCESS_KEY: z.string().min(1),
+  R2_BUCKET: z.string().min(1),
+  // Domain publik bucket (custom domain / r2.dev), tanpa trailing slash.
+  R2_PUBLIC_URL: httpUrl,
 });
 
 const schema = baseSchema.superRefine((v, ctx) => {
