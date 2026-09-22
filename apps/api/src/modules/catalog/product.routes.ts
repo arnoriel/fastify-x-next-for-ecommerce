@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, isNull, lte, type SQL, sql } from "drizzle-orm";
 import {
   createProductSchema,
   presignUploadRequestSchema,
@@ -89,6 +89,38 @@ function minPriceOf(variants: { price: number }[]): number {
   return variants.length ? Math.min(...variants.map((v) => v.price)) : 0;
 }
 
+/** Filter harga/rating + search bersama — dipakai listing publik & seller. */
+function buildListingConditions(
+  query: { search?: string; categoryId?: string; minPrice?: number; maxPrice?: number; minRating?: number },
+  base: SQL[],
+): SQL[] {
+  const conditions = [...base];
+  if (query.categoryId) conditions.push(eq(schema.products.categoryId, query.categoryId));
+  if (query.search) conditions.push(ilike(schema.products.name, `%${query.search}%`));
+  if (query.minPrice !== undefined) conditions.push(gte(schema.products.minPrice, query.minPrice));
+  if (query.maxPrice !== undefined) conditions.push(lte(schema.products.minPrice, query.maxPrice));
+  if (query.minRating !== undefined) conditions.push(gte(schema.products.ratingAvg, Math.round(query.minRating * 10)));
+  return conditions;
+}
+
+/** Whitelist kolom sort — cegah SQL injection lewat query param sembarangan. */
+function sortOrderBy(sort: string) {
+  switch (sort) {
+    case "price_asc":
+      return [asc(schema.products.minPrice)];
+    case "price_desc":
+      return [desc(schema.products.minPrice)];
+    case "rating":
+      return [desc(schema.products.ratingAvg), desc(schema.products.ratingCount)];
+    case "best_selling":
+      return [desc(schema.products.soldCount)];
+    case "newest":
+    case "relevance":
+    default:
+      return [desc(schema.products.createdAt)];
+  }
+}
+
 async function loadOwnedProduct(id: string, sellerId: string) {
   const product = await db.query.products.findFirst({
     where: (p, { and: andd, eq: eqq, isNull: isNulll }) => andd(eqq(p.id, id), isNulll(p.deletedAt)),
@@ -103,9 +135,10 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/api/products", async (req) => {
     const query = productListQuerySchema.parse(req.query);
-    const conditions = [isNull(schema.products.deletedAt), eq(schema.products.status, query.status ?? "active")];
-    if (query.categoryId) conditions.push(eq(schema.products.categoryId, query.categoryId));
-    if (query.search) conditions.push(ilike(schema.products.name, `%${query.search}%`));
+    const conditions = buildListingConditions(query, [
+      isNull(schema.products.deletedAt),
+      eq(schema.products.status, query.status ?? "active"),
+    ]);
 
     const where = and(...conditions);
     const [rows, [{ count }]] = await Promise.all([
@@ -113,7 +146,7 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
         .select()
         .from(schema.products)
         .where(where)
-        .orderBy(desc(schema.products.createdAt))
+        .orderBy(...sortOrderBy(query.sort))
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize),
       db.select({ count: sql<number>`count(*)::int` }).from(schema.products).where(where),

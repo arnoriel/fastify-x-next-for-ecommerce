@@ -3,9 +3,12 @@ import Fastify from "fastify";
 import { env } from "./env";
 import { closeDb } from "./lib/db";
 import { attachRedisLogging, closeRedis } from "./lib/redis";
+import { addressRoutes } from "./modules/address/address.routes";
 import { authRoutes } from "./modules/auth/routes";
+import { cartRoutes } from "./modules/cart/cart.routes";
 import { categoryRoutes } from "./modules/catalog/category.routes";
 import { productRoutes } from "./modules/catalog/product.routes";
+import { checkoutRoutes } from "./modules/checkout/checkout.routes";
 import { authPlugin } from "./plugins/auth";
 import { errorHandlerPlugin } from "./plugins/error-handler";
 import { healthRoutes } from "./routes/health";
@@ -40,6 +43,9 @@ export async function buildApp() {
   await app.register(authRoutes);
   await app.register(categoryRoutes);
   await app.register(productRoutes);
+  await app.register(addressRoutes);
+  await app.register(cartRoutes);
+  await app.register(checkoutRoutes);
 
   app.addHook("onClose", async () => {
     await Promise.allSettled([closeDb(), closeRedis()]);

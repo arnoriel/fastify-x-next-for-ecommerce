@@ -155,13 +155,26 @@ export const productWithVariantsSchema = productSchema.extend({
 });
 export type ProductWithVariants = z.infer<typeof productWithVariantsSchema>;
 
-export const productListQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  status: productStatusSchema.optional(),
-  categoryId: z.string().optional(),
-  search: z.string().trim().max(200).optional(),
-});
+export const PRODUCT_SORTS = ["relevance", "newest", "price_asc", "price_desc", "rating", "best_selling"] as const;
+export const productSortSchema = z.enum(PRODUCT_SORTS);
+export type ProductSort = z.infer<typeof productSortSchema>;
+
+export const productListQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    status: productStatusSchema.optional(),
+    categoryId: z.string().optional(),
+    search: z.string().trim().max(200).optional(),
+    minPrice: z.coerce.number().int().min(0).optional(),
+    maxPrice: z.coerce.number().int().min(0).optional(),
+    minRating: z.coerce.number().min(0).max(5).optional(),
+    sort: productSortSchema.default("relevance"),
+  })
+  .refine((v) => v.minPrice === undefined || v.maxPrice === undefined || v.minPrice <= v.maxPrice, {
+    message: "minPrice tidak boleh lebih besar dari maxPrice",
+    path: ["minPrice"],
+  });
 export type ProductListQuery = z.infer<typeof productListQuerySchema>;
 
 export const productListResponseSchema = z.object({
