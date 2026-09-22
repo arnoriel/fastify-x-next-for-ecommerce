@@ -81,6 +81,7 @@ export const categoryRoutes: FastifyPluginAsync = async (app) => {
       })
       .returning();
 
+    if (!row) throw httpError(500, "CATEGORY_CREATE_FAILED", "Gagal membuat kategori.");
     reply.code(201);
     return serializeCategory(row);
   });
@@ -122,6 +123,7 @@ export const categoryRoutes: FastifyPluginAsync = async (app) => {
       .where(eq(schema.categories.id, id))
       .returning();
 
+    if (!row) throw httpError(500, "CATEGORY_UPDATE_FAILED", "Gagal memperbarui kategori.");
     return serializeCategory(row);
   });
 

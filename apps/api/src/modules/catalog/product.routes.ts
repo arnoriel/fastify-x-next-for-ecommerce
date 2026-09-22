@@ -141,7 +141,7 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
     ]);
 
     const where = and(...conditions);
-    const [rows, [{ count }]] = await Promise.all([
+    const [rows, countRows] = await Promise.all([
       db
         .select()
         .from(schema.products)
@@ -151,6 +151,7 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
         .offset((query.page - 1) * query.pageSize),
       db.select({ count: sql<number>`count(*)::int` }).from(schema.products).where(where),
     ]);
+    const count = countRows[0]?.count ?? 0;
 
     const variantsByProduct = await db.query.productVariants.findMany({
       where: (v, { inArray }) => inArray(v.productId, rows.map((r) => r.id)),
@@ -196,7 +197,7 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
     if (query.search) conditions.push(ilike(schema.products.name, `%${query.search}%`));
 
     const where = and(...conditions);
-    const [rows, [{ count }]] = await Promise.all([
+    const [rows, countRows] = await Promise.all([
       db
         .select()
         .from(schema.products)
@@ -206,6 +207,7 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
         .offset((query.page - 1) * query.pageSize),
       db.select({ count: sql<number>`count(*)::int` }).from(schema.products).where(where),
     ]);
+    const count = countRows[0]?.count ?? 0;
 
     const variantsByProduct = await db.query.productVariants.findMany({
       where: (v, { inArray }) => inArray(v.productId, rows.map((r) => r.id)),
@@ -251,6 +253,8 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
           minPrice: minPriceOf(input.variants),
         })
         .returning();
+
+      if (!row) throw httpError(500, "PRODUCT_CREATE_FAILED", "Gagal membuat produk.");
 
       const variantRows = await tx
         .insert(schema.productVariants)
@@ -340,6 +344,7 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
               })
               .where(eq(schema.productVariants.id, v.id))
               .returning();
+            if (!updated) throw httpError(500, "VARIANT_UPDATE_FAILED", "Gagal memperbarui varian.");
             variantRows.push(updated);
           } else {
             if (!v.name || v.price === undefined) {
@@ -358,6 +363,7 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
                 imageUrl: v.imageUrl ?? null,
               })
               .returning();
+            if (!created) throw httpError(500, "VARIANT_CREATE_FAILED", "Gagal membuat varian.");
             variantRows.push(created);
           }
         }
@@ -388,6 +394,7 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
         .where(eq(schema.products.id, id))
         .returning();
 
+      if (!row) throw httpError(500, "PRODUCT_UPDATE_FAILED", "Gagal memperbarui produk.");
       return { row, variantRows };
     });
 
