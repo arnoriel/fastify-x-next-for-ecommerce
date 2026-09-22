@@ -15,6 +15,13 @@
       "when": 1789900223078,
       "tag": "0001_pink_lady_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790077861010,
+      "tag": "0002_slim_strong_guy",
+      "breakpoints": true
     }
   ]
 }

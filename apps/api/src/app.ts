@@ -9,6 +9,9 @@ import { cartRoutes } from "./modules/cart/cart.routes";
 import { categoryRoutes } from "./modules/catalog/category.routes";
 import { productRoutes } from "./modules/catalog/product.routes";
 import { checkoutRoutes } from "./modules/checkout/checkout.routes";
+import { notificationRoutes } from "./modules/notification/notification.routes";
+import { orderRoutes } from "./modules/order/order.routes";
+import { sellerOnboardingRoutes } from "./modules/seller/seller-onboarding.routes";
 import { authPlugin } from "./plugins/auth";
 import { errorHandlerPlugin } from "./plugins/error-handler";
 import { healthRoutes } from "./routes/health";
@@ -46,6 +49,9 @@ export async function buildApp() {
   await app.register(addressRoutes);
   await app.register(cartRoutes);
   await app.register(checkoutRoutes);
+  await app.register(orderRoutes);
+  await app.register(notificationRoutes);
+  await app.register(sellerOnboardingRoutes);
 
   app.addHook("onClose", async () => {
     await Promise.allSettled([closeDb(), closeRedis()]);

@@ -7,6 +7,7 @@ import { FaCartPlus, FaStar, FaTriangleExclamation } from "react-icons/fa6";
 import type { ProductWithVariants, Variant } from "@ecommerce/shared";
 import { formatCompactCount, formatRupiah } from "@/lib/format";
 import { useCartStore, type CartState } from "@/lib/cart-store";
+import { addGuestCartItem } from "@/lib/guest-cart";
 
 const FALLBACK_IMAGE = "/product-placeholder.svg";
 
@@ -50,9 +51,11 @@ export function ProductDetailView({ product }: { product: ProductWithVariants })
       setStatus("done");
       setTimeout(() => setStatus("idle"), 1500);
     } catch (err) {
-      // Edge case: belum login → backend balas 401. Arahkan ke login+next, jangan tampilkan raw error.
+      // Edge case: belum login → backend balas 401. Simpan pilihan ke guest cart (localStorage)
+      // SEBELUM redirect, supaya item tidak hilang — nanti di-merge otomatis setelah login (T-03).
       const msg = err instanceof Error ? err.message : "";
       if (msg.includes("401") || /unauthor/i.test(msg)) {
+        addGuestCartItem(selected.id, 1);
         router.push(`/login?next=${encodeURIComponent(`/product/${product.slug}`)}`);
         return;
       }

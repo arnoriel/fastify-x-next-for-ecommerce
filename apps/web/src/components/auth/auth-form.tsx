@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { loginSchema, registerSchema } from "@ecommerce/shared";
 import { authClient } from "@/lib/auth-client";
+import { mergeGuestCart } from "@/lib/cart-api";
+import { clearGuestCart, readGuestCart } from "@/lib/guest-cart";
 import { safeNext } from "@/lib/redirect";
 
 type Mode = "login" | "register";
@@ -72,6 +74,20 @@ export function AuthForm({ mode, next }: { mode: Mode; next?: string }) {
         setFormError(humanize(result.error.status, result.error.message));
         return;
       }
+
+      // T-03 [V3]: guest cart (localStorage) di-merge ke cart backend akun yang baru login.
+      // Gagal merge TIDAK memblokir login (best-effort) — buyer tetap masuk, hanya cart
+      // guest-nya yang mungkin tidak ikut, lebih baik daripada login gagal karena hal lain.
+      const guestItems = readGuestCart();
+      if (guestItems.length > 0) {
+        try {
+          await mergeGuestCart(guestItems);
+          clearGuestCart();
+        } catch {
+          // biarkan guest cart tersimpan — bisa dicoba lagi lain waktu, tidak hilang diam-diam.
+        }
+      }
+
       // refresh() agar server component (guard/getSession) membaca cookie baru.
       router.replace(safeNext(next));
       router.refresh();

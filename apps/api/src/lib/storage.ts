@@ -63,3 +63,31 @@ export async function presignProductImageUpload(
 export function isOwnedR2Url(url: string): boolean {
   return url.startsWith(`${env.R2_PUBLIC_URL}/`);
 }
+
+/**
+ * Presigned upload untuk dokumen onboarding seller (T-03B) — KTP/NPWP. Terpisah dari
+ * `presignProductImageUpload` karena dipanggil buyer yang BELUM jadi seller (belum punya
+ * `sellers.id`), jadi key di-path pakai userId, bukan sellerId.
+ */
+export async function presignSellerDocumentUpload(
+  userId: string,
+  input: PresignUploadRequest,
+): Promise<PresignUploadResponse> {
+  const ext = EXT_BY_MIME[input.contentType];
+  const key = `sellers/onboarding/${userId}/${randomUUID()}.${ext}`;
+
+  const command = new PutObjectCommand({
+    Bucket: env.R2_BUCKET,
+    Key: key,
+    ContentType: input.contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: PRESIGN_EXPIRES_SECONDS });
+
+  return {
+    uploadUrl,
+    publicUrl: `${env.R2_PUBLIC_URL}/${key}`,
+    key,
+    expiresIn: PRESIGN_EXPIRES_SECONDS,
+  };
+}

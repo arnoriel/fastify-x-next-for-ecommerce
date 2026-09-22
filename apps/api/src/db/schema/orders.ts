@@ -28,6 +28,10 @@ export const checkouts = pgTable(
     guestEmail: text("guest_email"),
     guestPhone: text("guest_phone"),
     invoiceNo: text("invoice_no").notNull(),
+    // T-06 [V3]: idempotency key per checkout attempt (dikirim FE, mis. UUID dibuat saat
+    // form checkout dibuka). Unique per user — submit ganda dengan key sama mengembalikan
+    // checkout yang sudah ada, bukan membuat order duplikat.
+    idempotencyKey: text("idempotency_key"),
     status: checkoutStatus("status").notNull().default("pending"),
     subtotal: integer("subtotal").notNull(),
     shippingTotal: integer("shipping_total").notNull().default(0),
@@ -44,6 +48,11 @@ export const checkouts = pgTable(
   (t) => [
     uniqueIndex("checkouts_invoice_uq").on(t.invoiceNo),
     index("checkouts_user_idx").on(t.userId),
+    // Partial unique: hanya berlaku per (user, key) saat key terisi — NULL tidak dianggap
+    // duplikat oleh Postgres, jadi baris lama tanpa idempotencyKey tetap aman.
+    uniqueIndex("checkouts_user_idempotency_uq")
+      .on(t.userId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} is not null`),
     check("checkouts_owner_chk", sql`${t.userId} is not null or ${t.guestEmail} is not null or ${t.guestPhone} is not null`),
     check("checkouts_amounts_chk", sql`${t.subtotal} >= 0 and ${t.shippingTotal} >= 0 and ${t.discountTotal} >= 0 and ${t.grandTotal} >= 0`),
   ],

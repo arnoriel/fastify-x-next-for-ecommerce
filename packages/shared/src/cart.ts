@@ -102,6 +102,9 @@ export const createCheckoutSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => undefined)),
   note: z.string().trim().max(500).optional(),
+  // T-06 [V3]: dibuat FE sekali per attempt (UUID), dikirim ulang kalau retry setelah
+  // network error/redirect-login — cegah double-order dari klik ganda/resubmit.
+  idempotencyKey: z.string().trim().min(1).max(100).optional(),
 });
 export type CreateCheckoutInput = z.infer<typeof createCheckoutSchema>;
 

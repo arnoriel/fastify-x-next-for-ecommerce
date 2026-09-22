@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { newId, timestamps } from "./_helpers";
-import { payoutStatus } from "./enums";
+import { notificationType, payoutStatus } from "./enums";
 import { orderItems } from "./orders";
 import { products } from "./catalog";
 import { sellers } from "./sellers";
@@ -117,5 +117,27 @@ export const payouts = pgTable(
   (t) => [
     index("payouts_seller_idx").on(t.sellerId, t.status),
     check("payouts_amount_chk", sql`${t.amount} > 0`),
+  ],
+);
+
+// Notifikasi in-app (T-09B). `payload` bebas per-type (mis. { orderId } untuk order_status,
+// { conversationId } untuk chat_message, { sellerId } untuk seller_status) — dibaca FE by type.
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: text("id").primaryKey().$defaultFn(newId),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: notificationType("type").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    isRead: boolean("is_read").notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [
+    index("notifications_user_idx").on(t.userId, t.createdAt),
+    index("notifications_user_unread_idx").on(t.userId, t.isRead),
   ],
 );

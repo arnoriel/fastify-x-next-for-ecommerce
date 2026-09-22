@@ -3,7 +3,7 @@ import { addresses } from "./addresses";
 import { accounts, sessions } from "./auth";
 import { carts, cartItems } from "./carts";
 import { categories, productVariants, products } from "./catalog";
-import { conversations, messages, payouts, reviews, wishlists } from "./engagement";
+import { conversations, messages, notifications, payouts, reviews, wishlists } from "./engagement";
 import { checkouts, orderItems, orders, voucherUsages } from "./orders";
 import { sellers } from "./sellers";
 import { users } from "./users";
@@ -18,6 +18,11 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   orders: many(orders),
   reviews: many(reviews),
   wishlists: many(wishlists),
+  notifications: many(notifications),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, { fields: [notifications.userId], references: [users.id] }),
 }));
 
 export const addressesRelations = relations(addresses, ({ one }) => ({

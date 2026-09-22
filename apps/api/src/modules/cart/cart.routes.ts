@@ -1,9 +1,15 @@
 import type { FastifyPluginAsync } from "fastify";
 import { eq, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { addCartItemSchema, type CartGroup, type CartResponse, updateCartItemSchema } from "@ecommerce/shared";
 import { db, schema } from "../../db";
 import { httpError } from "../../lib/http-error";
 import { requireAuth } from "../../plugins/auth";
+
+// T-03 [V3]: cart guest (disimpan client, localStorage) dikirim ke sini saat login sukses.
+const mergeCartSchema = z.object({
+  items: z.array(z.object({ variantId: z.string().min(1), quantity: z.number().int().min(1).max(999) })).max(100),
+});
 
 /** Cart user login, dibuat otomatis kalau belum ada (lazy create — 1 user selalu punya <=1 cart). */
 async function getOrCreateCart(userId: string) {
@@ -165,6 +171,48 @@ export const cartRoutes: FastifyPluginAsync = async (app) => {
     const cart = await getOrCreateCart(req.user!.id);
     await db.delete(schema.cartItems).where(eq(schema.cartItems.cartId, cart.id));
     reply.code(204);
+  });
+
+  // T-03 [V3]: merge cart guest (client) → cart backend akun yang baru login. Item sama
+  // (variantId sama) → qty dijumlahkan, dicap di stok tersedia (bukan ditolak/hilang).
+  // Item stok tidak cukup → di-cap ke stok max, bukan gagal seluruh request (partial success,
+  // supaya item lain yang valid tidak ikut batal karena 1 item bermasalah).
+  app.post("/api/cart/merge", { preHandler: requireAuth }, async (req) => {
+    const input = mergeCartSchema.parse(req.body);
+    if (input.items.length === 0) return buildCartResponse((await getOrCreateCart(req.user!.id)).id);
+
+    const cart = await getOrCreateCart(req.user!.id);
+    const variantIds = input.items.map((i) => i.variantId);
+    const variants = await db.query.productVariants.findMany({
+      where: (v, { and: andd, eq: eqq, inArray: inArr }) =>
+        andd(inArr(v.id, variantIds), eqq(v.isActive, true)),
+      with: { product: true },
+    });
+    const variantMap = new Map(variants.map((v) => [v.id, v]));
+
+    const existingItems = await db.query.cartItems.findMany({
+      where: (ci, { eq: eqq }) => eqq(ci.cartId, cart.id),
+    });
+    const existingByVariant = new Map(existingItems.map((i) => [i.variantId, i]));
+
+    for (const guestItem of input.items) {
+      const variant = variantMap.get(guestItem.variantId);
+      // Varian sudah dihapus/nonaktif sejak disimpan di guest cart → skip diam-diam, bukan
+      // gagalkan merge (buyer sudah tidak bisa berbuat apa-apa soal item yang sudah invalid).
+      if (!variant || !variant.product || variant.product.deletedAt || variant.product.status !== "active") continue;
+
+      const existing = existingByVariant.get(guestItem.variantId);
+      const desiredQty = Math.min((existing?.quantity ?? 0) + guestItem.quantity, variant.stock);
+      if (desiredQty <= 0) continue;
+
+      if (existing) {
+        await db.update(schema.cartItems).set({ quantity: desiredQty }).where(eq(schema.cartItems.id, existing.id));
+      } else {
+        await db.insert(schema.cartItems).values({ cartId: cart.id, variantId: guestItem.variantId, quantity: desiredQty });
+      }
+    }
+
+    return buildCartResponse(cart.id);
   });
 
   // Dipakai halaman checkout untuk resolve beberapa varian by id sekaligus (edge case: item

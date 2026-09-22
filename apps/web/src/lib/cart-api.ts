@@ -36,6 +36,11 @@ export async function getCart(): Promise<CartResponse> {
   return parseOrThrow(await jsonRequest("GET", "/api/cart"));
 }
 
+/** T-03 [V3]: kirim guest cart (localStorage) ke backend saat login sukses. */
+export async function mergeGuestCart(items: { variantId: string; quantity: number }[]): Promise<CartResponse> {
+  return parseOrThrow(await jsonRequest("POST", "/api/cart/merge", { items }));
+}
+
 export async function addCartItem(variantId: string, quantity = 1): Promise<CartResponse> {
   return parseOrThrow(await jsonRequest("POST", "/api/cart/items", { variantId, quantity }));
 }

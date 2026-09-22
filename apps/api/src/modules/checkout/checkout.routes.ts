@@ -180,6 +180,35 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
     const input = createCheckoutSchema.parse(req.body);
     const userId = req.user!.id;
 
+    // T-06 [V3] idempotency: submit ganda (double-click, atau retry setelah redirect
+    // login akibat session expired di tengah checkout) dengan key yang sama mengembalikan
+    // checkout yang SUDAH dibuat, bukan membuat order duplikat kedua kalinya.
+    if (input.idempotencyKey) {
+      const existing = await db.query.checkouts.findFirst({
+        where: (c, { and: andd, eq: eqq }) => andd(eqq(c.userId, userId), eqq(c.idempotencyKey, input.idempotencyKey!)),
+      });
+      if (existing) {
+        const orders = await db.query.orders.findMany({
+          where: (o, { eq: eqq }) => eqq(o.checkoutId, existing.id),
+          with: { items: true, seller: true },
+        });
+        reply.code(200); // bukan 201 — bukan resource baru, mengembalikan yang sudah ada.
+        return checkoutViewSchema.parse({
+          id: existing.id,
+          invoiceNo: existing.invoiceNo,
+          status: existing.status,
+          subtotal: existing.subtotal,
+          shippingTotal: existing.shippingTotal,
+          discountTotal: existing.discountTotal,
+          grandTotal: existing.grandTotal,
+          paymentUrl: existing.paymentUrl,
+          expiresAt: existing.expiresAt ? existing.expiresAt.toISOString() : null,
+          orders: orders.map((o) => serializeOrder(o, o.seller!.storeName, o.items)),
+          createdAt: existing.createdAt.toISOString(),
+        });
+      }
+    }
+
     const address = await loadOwnedAddress(userId, input.addressId);
     const cartItems = await loadCartForCheckout(userId);
     if (cartItems.length === 0) throw httpError(400, "CART_EMPTY", "Keranjang Anda kosong.");
@@ -211,6 +240,7 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
         .values({
           userId,
           invoiceNo,
+          idempotencyKey: input.idempotencyKey ?? null,
           status: "pending",
           subtotal: 0,
           shippingTotal: 0,

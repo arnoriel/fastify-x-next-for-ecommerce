@@ -20,3 +20,6 @@ export const orderStatus = pgEnum("order_status", [
 export const voucherType = pgEnum("voucher_type", ["percent", "fixed"]);
 export const voucherScope = pgEnum("voucher_scope", ["platform", "seller"]);
 export const payoutStatus = pgEnum("payout_status", ["pending", "approved", "rejected", "paid"]);
+// T-09B: order_status (perubahan status order), chat_message (pesan baru), seller_status
+// (approve/reject onboarding T-03B).
+export const notificationType = pgEnum("notification_type", ["order_status", "chat_message", "seller_status"]);

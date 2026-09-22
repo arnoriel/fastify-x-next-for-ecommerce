@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { requireUser } from "@/lib/session";
 
@@ -11,19 +12,25 @@ export default async function AccountPage() {
   const user = await requireUser({ next: "/account" });
 
   return (
-    <main className="auth-shell">
-      <section className="form">
-        <h1>Akun saya</h1>
-        <dl className="kv">
-          <dt>Nama</dt>
-          <dd>{user.name}</dd>
-          <dt>Email</dt>
-          <dd>{user.email}</dd>
-          <dt>Peran</dt>
-          <dd>{ROLE_LABEL[user.role]}</dd>
-        </dl>
-        <SignOutButton />
-      </section>
-    </main>
+    <section className="form">
+      <h1>Akun saya</h1>
+      <dl className="kv">
+        <dt>Nama</dt>
+        <dd>{user.name}</dd>
+        <dt>Email</dt>
+        <dd>{user.email}</dd>
+        <dt>Peran</dt>
+        <dd>{ROLE_LABEL[user.role]}</dd>
+      </dl>
+      <Link href="/orders" className="btn">
+        Riwayat pesanan
+      </Link>
+      {user.role === "buyer" && (
+        <Link href="/seller/onboarding" className="btn-dashed">
+          Buka toko
+        </Link>
+      )}
+      <SignOutButton />
+    </section>
   );
 }

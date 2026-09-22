@@ -4,3 +4,6 @@ export * from "./auth";
 export * from "./catalog";
 export * from "./address";
 export * from "./cart";
+export * from "./order";
+export * from "./notification";
+export * from "./seller";

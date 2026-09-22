@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FaTriangleExclamation } from "react-icons/fa6";
 import type { Address, CartGroup, CreateCheckoutInput, ShippingRate } from "@ecommerce/shared";
 import { listAddresses } from "@/lib/address-api";
@@ -9,6 +9,59 @@ import { getShippingRates, submitCheckout } from "@/lib/cart-api";
 import { useCartStore } from "@/lib/cart-store";
 import { formatRupiah } from "@/lib/format";
 import { AddressForm } from "./address-form";
+
+const DRAFT_KEY = "checkout_draft_v1";
+const IDEMPOTENCY_KEY_STORAGE = "checkout_idempotency_v1";
+
+/** UUID stabil per "attempt" checkout — dipakai lagi kalau submit di-retry (mis. setelah
+ * redirect login akibat session expired), supaya backend tahu ini submit yang sama, bukan
+ * order baru. Direset (dihapus) setelah checkout SUKSES. */
+function getOrCreateIdempotencyKey(): string {
+  if (typeof window === "undefined") return crypto.randomUUID();
+  let key = window.sessionStorage.getItem(IDEMPOTENCY_KEY_STORAGE);
+  if (!key) {
+    key = crypto.randomUUID();
+    window.sessionStorage.setItem(IDEMPOTENCY_KEY_STORAGE, key);
+  }
+  return key;
+}
+
+function clearIdempotencyKey() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(IDEMPOTENCY_KEY_STORAGE);
+}
+
+interface CheckoutDraft {
+  addressId: string | null;
+  selections: Record<string, { courierCode: string; service: string; voucherCode: string }>;
+  platformVoucher: string;
+}
+
+/** T-06 [V3]: simpan pilihan alamat/kurir/voucher supaya kalau session expired di tengah
+ * checkout dan buyer diarahkan ke login, setelah login balik ke checkout tanpa mengulang. */
+function saveDraft(draft: CheckoutDraft) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // sessionStorage penuh/disabled — draft tidak tersimpan, bukan fatal.
+  }
+}
+
+function readDraft(): CheckoutDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as CheckoutDraft) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(DRAFT_KEY);
+}
 
 type SellerSelection = { courierCode: string; service: string; voucherCode: string };
 
@@ -31,16 +84,36 @@ export function CheckoutView() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const draftRestored = useRef(false);
 
   useEffect(() => {
     void refresh();
+    // T-06 [V3]: kalau ada draft tersisa (dari sebelum redirect login), pulihkan alamat &
+    // pilihan kurir/voucher; kalau tidak, pakai default seperti biasa.
+    const draft = readDraft();
     void listAddresses().then((items) => {
       setAddresses(items);
-      const def = items.find((a) => a.isDefault) ?? items[0];
-      if (def) setAddressId(def.id);
+      if (draft?.addressId && items.some((a) => a.id === draft.addressId)) {
+        setAddressId(draft.addressId);
+      } else {
+        const def = items.find((a) => a.isDefault) ?? items[0];
+        if (def) setAddressId(def.id);
+      }
     });
+    if (draft) {
+      if (Object.keys(draft.selections).length > 0) setSelections(draft.selections);
+      if (draft.platformVoucher) setPlatformVoucher(draft.platformVoucher);
+      draftRestored.current = true;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Simpan draft setiap kali pilihan berubah — bukan hanya saat submit, supaya kalau session
+  // habis SEBELUM sempat klik "Bayar Sekarang", draft tetap ada.
+  useEffect(() => {
+    if (!addressId && Object.keys(selections).length === 0) return;
+    saveDraft({ addressId, selections, platformVoucher });
+  }, [addressId, selections, platformVoucher]);
 
   const groups = useMemo(
     () => (cart?.groups ?? []).filter((g) => availableItemsOf(g).length > 0),
@@ -112,11 +185,25 @@ export function CheckoutView() {
           };
         }),
         platformVoucherCode: platformVoucher || undefined,
+        // T-06 [V3]: idempotency key sama dipakai lagi bila attempt ini adalah retry —
+        // backend mengembalikan checkout yang sama, bukan membuat order kedua.
+        idempotencyKey: getOrCreateIdempotencyKey(),
       };
       const checkout = await submitCheckout(payload);
+      // Sukses → draft & idempotency key tidak relevan lagi untuk attempt berikutnya.
+      clearDraft();
+      clearIdempotencyKey();
       router.push(`/checkout/${checkout.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Checkout gagal. Silakan coba lagi.");
+      const msg = err instanceof Error ? err.message : "";
+      // T-06 [V3]: session expired di tengah submit → redirect login, draft SUDAH tersimpan
+      // (efek di atas menyimpan tiap perubahan), jadi setelah login balik ke checkout dengan
+      // pilihan masih ada — bukan 401 mentah atau checkout gagal diam-diam.
+      if (msg.includes("401") || /unauthor/i.test(msg)) {
+        router.push(`/login?next=${encodeURIComponent("/checkout")}`);
+        return;
+      }
+      setError(msg || "Checkout gagal. Silakan coba lagi.");
       setSubmitting(false);
     }
   }
