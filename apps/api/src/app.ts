@@ -11,6 +11,7 @@ import { productRoutes } from "./modules/catalog/product.routes";
 import { checkoutRoutes } from "./modules/checkout/checkout.routes";
 import { notificationRoutes } from "./modules/notification/notification.routes";
 import { orderRoutes } from "./modules/order/order.routes";
+import { paymentRoutes } from "./modules/payment/payment.routes";
 import { sellerOnboardingRoutes } from "./modules/seller/seller-onboarding.routes";
 import { authPlugin } from "./plugins/auth";
 import { errorHandlerPlugin } from "./plugins/error-handler";
@@ -51,6 +52,7 @@ export async function buildApp() {
   await app.register(checkoutRoutes);
   await app.register(orderRoutes);
   await app.register(notificationRoutes);
+  await app.register(paymentRoutes);
   await app.register(sellerOnboardingRoutes);
 
   app.addHook("onClose", async () => {

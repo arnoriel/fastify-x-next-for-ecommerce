@@ -2,26 +2,34 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { FaCircleCheck, FaClock, FaTriangleExclamation } from "react-icons/fa6";
+import { useEffect, useRef, useState } from "react";
+import { FaCircleCheck, FaClock, FaRotateRight, FaTriangleExclamation } from "react-icons/fa6";
 import type { CheckoutView } from "@ecommerce/shared";
-import { pollCheckout } from "@/lib/checkout-status-api";
+import { initiatePayment, manualCheckStatus, pollCheckout } from "@/lib/checkout-status-api";
 import { formatRupiah } from "@/lib/format";
 
 const POLL_INTERVAL_MS = 4000;
+// Setelah N menit tanpa bayar, tawarkan manual check ke Midtrans (fallback webhook gagal).
+const MANUAL_CHECK_AFTER_MS = 90_000;
 const FINAL_STATUSES = new Set(["paid", "expired", "failed", "cancelled"]);
 
 export function PaymentStatusView({ checkout: initial }: { checkout: CheckoutView }) {
   const router = useRouter();
   const [checkout, setCheckout] = useState(initial);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [manualChecking, setManualChecking] = useState(false);
+  const startedAt = useRef(Date.now());
 
+  // T-06B: polling sampai status final — begitu webhook Midtrans (T-07) mengubah status
+  // di backend, halaman ini ter-update otomatis tanpa refresh manual.
   useEffect(() => {
-    // T-06B: polling sampai status final (paid/expired/failed/cancelled) — begitu webhook
-    // Duitku (T-07) mengubah status di backend, halaman ini ter-update otomatis tanpa refresh.
     if (FINAL_STATUSES.has(checkout.status)) return;
     const interval = setInterval(() => {
       pollCheckout(checkout.id)
-        .then(setCheckout)
+        .then((updated) => {
+          setCheckout(updated);
+        })
         .catch(() => {
           // polling gagal sementara (network) — coba lagi di interval berikutnya.
         });
@@ -29,13 +37,55 @@ export function PaymentStatusView({ checkout: initial }: { checkout: CheckoutVie
     return () => clearInterval(interval);
   }, [checkout.id, checkout.status]);
 
+  // Paid → auto-redirect ke riwayat order setelah buyer sempat lihat konfirmasi sekilas.
   useEffect(() => {
-    // Paid → auto-redirect ke riwayat order setelah beri waktu buyer melihat konfirmasi sekilas.
     if (checkout.status !== "paid") return;
     const timeout = setTimeout(() => router.push("/orders"), 2500);
     return () => clearTimeout(timeout);
   }, [checkout.status, router]);
 
+  // Tawaran manual check setelah lama menunggu (webhook mungkin tidak sampai di dev tanpa tunnel).
+  const elapsedMs = Date.now() - startedAt.current;
+  const showManualCheck = !FINAL_STATUSES.has(checkout.status) && elapsedMs >= MANUAL_CHECK_AFTER_MS;
+
+  async function handleRetryPayment() {
+    if (retrying) return;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const result = await initiatePayment(checkout.id);
+      if (result.paymentUrl) {
+        window.open(result.paymentUrl, "_blank", "noopener,noreferrer");
+        // Juga update local state supaya tombol "Bayar Sekarang" muncul.
+        setCheckout((prev) => ({ ...prev, paymentUrl: result.paymentUrl }));
+      }
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : "Gagal menghubungi layanan pembayaran. Coba lagi.");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  async function handleManualCheck() {
+    if (manualChecking) return;
+    setManualChecking(true);
+    try {
+      const result = await manualCheckStatus(checkout.id);
+      // Re-poll untuk sinkron state checkout lengkap.
+      const updated = await pollCheckout(checkout.id);
+      setCheckout(updated);
+      if (result.status !== updated.status) {
+        // Status berubah — perbarui dari hasil rekonsiliasi.
+        setCheckout((prev) => ({ ...prev, status: result.status as CheckoutView["status"] }));
+      }
+    } catch {
+      // silent fail — polling tetap jalan
+    } finally {
+      setManualChecking(false);
+    }
+  }
+
+  // ---- Status: PAID ----
   if (checkout.status === "paid") {
     return (
       <div className="flex flex-col gap-4">
@@ -51,8 +101,10 @@ export function PaymentStatusView({ checkout: initial }: { checkout: CheckoutVie
     );
   }
 
+  // ---- Status: EXPIRED / FAILED / CANCELLED ----
   if (checkout.status === "expired" || checkout.status === "failed" || checkout.status === "cancelled") {
-    const label = checkout.status === "expired" ? "Kedaluwarsa" : checkout.status === "failed" ? "Gagal" : "Dibatalkan";
+    const label =
+      checkout.status === "expired" ? "Kedaluwarsa" : checkout.status === "failed" ? "Gagal" : "Dibatalkan";
     return (
       <div className="flex flex-col gap-4">
         <div className="glass flex flex-col items-center gap-3 p-10 text-center">
@@ -61,12 +113,9 @@ export function PaymentStatusView({ checkout: initial }: { checkout: CheckoutVie
           <p className="text-sm text-[var(--muted)]">
             Invoice <strong>{checkout.invoiceNo}</strong> tidak berhasil diselesaikan.
           </p>
-          <div className="flex gap-2 pt-2">
+          <div className="flex flex-wrap justify-center gap-2 pt-2">
             <Link href="/cart" className="btn">
               Kembali ke Keranjang
-            </Link>
-            <Link href="/checkout" className="btn-dashed">
-              Coba Bayar Lagi
             </Link>
           </div>
         </div>
@@ -74,7 +123,7 @@ export function PaymentStatusView({ checkout: initial }: { checkout: CheckoutVie
     );
   }
 
-  // pending — status default menunggu webhook T-07.
+  // ---- Status: PENDING ----
   return (
     <div className="flex flex-col gap-4">
       <div className="glass flex flex-col items-center gap-3 p-10 text-center">
@@ -83,15 +132,50 @@ export function PaymentStatusView({ checkout: initial }: { checkout: CheckoutVie
         <p className="text-sm text-[var(--muted)]">
           Invoice <strong>{checkout.invoiceNo}</strong> — {formatRupiah(checkout.grandTotal)}
         </p>
+
         {checkout.paymentUrl ? (
+          // paymentUrl sudah ada — buka halaman Midtrans Snap.
           <a href={checkout.paymentUrl} className="btn mt-2" target="_blank" rel="noopener noreferrer">
             Bayar Sekarang
           </a>
         ) : (
-          <p className="muted small mt-2">
-            Instruksi pembayaran sedang disiapkan. Halaman ini akan ter-update otomatis begitu
-            tersedia.
-          </p>
+          // paymentUrl belum ada (Midtrans sempat down saat checkout dibuat) — tawari retry.
+          <div className="flex flex-col items-center gap-2 mt-2">
+            <p className="text-sm text-[var(--muted)]">
+              Halaman pembayaran belum tersedia. Klik tombol di bawah untuk mencoba lagi.
+            </p>
+            <button
+              className="btn"
+              onClick={handleRetryPayment}
+              disabled={retrying}
+              aria-busy={retrying}
+            >
+              {retrying ? (
+                <span className="flex items-center gap-2">
+                  <FaRotateRight aria-hidden className="animate-spin" /> Menghubungi payment gateway...
+                </span>
+              ) : (
+                "Buka Halaman Bayar"
+              )}
+            </button>
+            {retryError && (
+              <p role="alert" className="text-sm text-[var(--down)]">
+                {retryError}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Fallback: tawarkan manual check ke Midtrans kalau sudah lama menunggu */}
+        {showManualCheck && (
+          <button
+            className="btn-dashed mt-1 text-sm"
+            onClick={handleManualCheck}
+            disabled={manualChecking}
+            aria-busy={manualChecking}
+          >
+            {manualChecking ? "Mengecek status..." : "Cek ulang status pembayaran"}
+          </button>
         )}
       </div>
 

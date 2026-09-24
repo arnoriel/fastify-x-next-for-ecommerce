@@ -9,9 +9,11 @@ import {
 } from "@ecommerce/shared";
 import { db, schema } from "../../db";
 import { httpError } from "../../lib/http-error";
+import { createTransaction } from "../../lib/midtrans";
 import { generateInvoiceNo, generateOrderNo } from "../../lib/order-number";
 import { shippingProvider } from "../../lib/shipping";
 import { requireAuth } from "../../plugins/auth";
+import { env } from "../../env";
 
 type CartItemWithVariant = Awaited<ReturnType<typeof loadCartForCheckout>>[number];
 
@@ -431,16 +433,71 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
       return { checkoutRow: checkoutRow!, orderRows };
     });
 
+    // T-07: Inisiasi Midtrans Snap transaction setelah checkout dibuat.
+    // grandTotal = 0 (full voucher) → skip Midtrans, langsung mark paid.
+    let paymentUrl: string | null = result.checkoutRow.paymentUrl;
+    let checkoutStatus = result.checkoutRow.status;
+
+    if (result.checkoutRow.grandTotal === 0) {
+      // Full discount — tidak perlu payment gateway.
+      await db.update(schema.checkouts)
+        .set({ status: "paid", paidAt: new Date(), paymentMethod: "voucher_full_discount", updatedAt: new Date() })
+        .where(eq(schema.checkouts.id, result.checkoutRow.id));
+      await db.update(schema.orders)
+        .set({ status: "paid", updatedAt: new Date() })
+        .where(eq(schema.orders.checkoutId, result.checkoutRow.id));
+      checkoutStatus = "paid";
+    } else {
+      // Buat Snap transaction — bisa null kalau Midtrans sedang down.
+      // Buyer masih bisa retry via POST /api/checkout/:id/pay nanti.
+      const user = await db.query.users.findFirst({ where: (u, { eq: eqq }) => eqq(u.id, userId) });
+
+      const itemDetails = result.orderRows.flatMap((o) =>
+        o.items.map((i) => ({
+          id: i.variantId,
+          price: i.unitPrice,
+          quantity: i.quantity,
+          name: `${i.productName} (${i.variantName})`.slice(0, 50),
+        })),
+      );
+      for (const o of result.orderRows) {
+        if (o.row.shippingCost > 0) {
+          itemDetails.push({ id: `shipping-${o.row.id}`, price: o.row.shippingCost, quantity: 1, name: `Ongkir ${o.row.courierCode ?? ""}`.trim().slice(0, 50) });
+        }
+        if (o.row.discount > 0) {
+          itemDetails.push({ id: `discount-${o.row.id}`, price: -o.row.discount, quantity: 1, name: "Diskon voucher" });
+        }
+      }
+
+      const webUrl = env.WEB_URL.replace(/\/$/, "");
+      const snap = await createTransaction({
+        orderId: result.checkoutRow.invoiceNo,
+        grossAmount: result.checkoutRow.grandTotal,
+        customerName: user?.name ?? "Customer",
+        customerEmail: user?.email ?? "",
+        items: itemDetails,
+        callbackUrl: `${webUrl}/checkout/${result.checkoutRow.id}`,
+      });
+
+      if (snap) {
+        await db.update(schema.checkouts)
+          .set({ paymentUrl: snap.redirect_url, paymentReference: snap.token, updatedAt: new Date() })
+          .where(eq(schema.checkouts.id, result.checkoutRow.id));
+        paymentUrl = snap.redirect_url;
+      }
+      // snap = null (Midtrans down) → paymentUrl tetap null, buyer retry via /api/checkout/:id/pay.
+    }
+
     reply.code(201);
     return checkoutViewSchema.parse({
       id: result.checkoutRow.id,
       invoiceNo: result.checkoutRow.invoiceNo,
-      status: result.checkoutRow.status,
+      status: checkoutStatus,
       subtotal: result.checkoutRow.subtotal,
       shippingTotal: result.checkoutRow.shippingTotal,
       discountTotal: result.checkoutRow.discountTotal,
       grandTotal: result.checkoutRow.grandTotal,
-      paymentUrl: result.checkoutRow.paymentUrl,
+      paymentUrl,
       expiresAt: result.checkoutRow.expiresAt ? result.checkoutRow.expiresAt.toISOString() : null,
       orders: result.orderRows.map((o) => serializeOrder(o.row, o.sellerName, o.items)),
       createdAt: result.checkoutRow.createdAt.toISOString(),

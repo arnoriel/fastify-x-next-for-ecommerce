@@ -37,10 +37,10 @@ export const checkouts = pgTable(
     shippingTotal: integer("shipping_total").notNull().default(0),
     discountTotal: integer("discount_total").notNull().default(0),
     grandTotal: integer("grand_total").notNull(),
-    // Duitku (T-07).
+    // Midtrans (T-07).
     paymentMethod: text("payment_method"),
-    paymentReference: text("payment_reference"),
-    paymentUrl: text("payment_url"),
+    paymentReference: text("payment_reference"), // Snap token
+    paymentUrl: text("payment_url"), // Snap redirect_url (dibuka buyer untuk bayar)
     paidAt: timestamp("paid_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     ...timestamps,

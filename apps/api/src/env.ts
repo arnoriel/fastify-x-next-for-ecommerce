@@ -35,6 +35,22 @@ const baseSchema = z.object({
   R2_BUCKET: z.string().min(1),
   // Domain publik bucket (custom domain / r2.dev), tanpa trailing slash.
   R2_PUBLIC_URL: httpUrl,
+  // --- Midtrans (T-07) — ambil dari dashboard.sandbox.midtrans.com > Settings > Access Keys ---
+  // Server key dipakai untuk Basic Auth ke Midtrans API dan signature verification webhook.
+  MIDTRANS_SERVER_KEY: z.string().min(1),
+  // Client key dipakai FE (Snap.js). Tidak dipakai BE tapi disimpan di env supaya bisa di-expose
+  // ke FE via API config jika diperlukan tanpa rebuild image.
+  MIDTRANS_CLIENT_KEY: z.string().min(1),
+  // true = sandbox mode (default dev), false = production.
+  MIDTRANS_SANDBOX: z.preprocess((v) => {
+    if (typeof v === "boolean") return v;
+    if (typeof v === "string") return v.toLowerCase() !== "false";
+    return true;
+  }, z.boolean().default(true)),
+  // URL publik API yang bisa dijangkau Midtrans untuk webhook callback.
+  // Di dev: gunakan ngrok/cloudflared tunnel. Di production: domain API kamu.
+  // Default ke BETTER_AUTH_URL (atau API_HOST:API_PORT) kalau tidak diisi.
+  API_PUBLIC_URL: optionalUrl,
 });
 
 const schema = baseSchema.superRefine((v, ctx) => {
@@ -43,6 +59,13 @@ const schema = baseSchema.superRefine((v, ctx) => {
       code: "custom",
       path: ["GOOGLE_CLIENT_ID"],
       message: "GOOGLE_CLIENT_ID dan GOOGLE_CLIENT_SECRET harus diisi bersamaan (atau kosongkan keduanya)",
+    });
+  }
+  if (v.NODE_ENV === "production" && v.MIDTRANS_SANDBOX === true) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["MIDTRANS_SANDBOX"],
+      message: "MIDTRANS_SANDBOX masih true di production — set ke false dan ganti ke production key",
     });
   }
   if (v.NODE_ENV === "production" && v.BETTER_AUTH_SECRET.includes("change_me")) {

@@ -21,3 +21,26 @@ export async function pollCheckout(id: string): Promise<CheckoutView> {
   const res = await fetch(apiUrl(`/api/checkout/${id}`), { credentials: "include" });
   return parseOrThrow(res);
 }
+
+/**
+ * Inisiasi / retry pembayaran Midtrans Snap (T-07).
+ * Dipanggil kalau checkout dibuat tapi paymentUrl masih null (Midtrans sempat down),
+ * atau buyer ingin membuka ulang halaman bayar.
+ */
+export async function initiatePayment(checkoutId: string): Promise<{ status: string; paymentUrl: string | null }> {
+  const res = await fetch(apiUrl(`/api/checkout/${checkoutId}/pay`), {
+    method: "POST",
+    credentials: "include",
+  });
+  return parseOrThrow(res);
+}
+
+/**
+ * Manual status check dari Midtrans API langsung (fallback rekonsiliasi).
+ * Dipakai sebagai fallback kalau polling /api/checkout/:id tidak menangkap perubahan
+ * karena webhook tidak sampai (dev tanpa tunnel).
+ */
+export async function manualCheckStatus(checkoutId: string): Promise<{ status: string; paymentUrl: string | null }> {
+  const res = await fetch(apiUrl(`/api/checkout/${checkoutId}/status`), { credentials: "include" });
+  return parseOrThrow(res);
+}
