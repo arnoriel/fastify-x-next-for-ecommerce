@@ -32,8 +32,16 @@ npm run db:seed        # data demo + akun login
 npm run dev            # web + api (turbo, hot-reload)
 ```
 
+## Jalankan NGROK untuk payment
+
+```bash
+npx ngrok http 4000
+```
+Salin domain, simpan di midtrans ke Payment -> Notification URL -> isi Payment Notification URL nya 'https://domain.ngrok.free.app/webhook/midtrans'
+
 - Web: http://localhost:3000 (menampilkan status API / Postgres / Redis)
 - API: http://localhost:4000/health (liveness) · http://localhost:4000/ready (Postgres + Redis, 503 jika down)
+- Ngrok: https://domain.ngrok.free.app/webhook/midtrans
 
 ## Scripts (root)
 
