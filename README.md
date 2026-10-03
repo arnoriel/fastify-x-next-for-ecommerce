@@ -43,6 +43,17 @@ Salin domain, simpan di midtrans ke Payment -> Notification URL -> isi Payment N
 - API: http://localhost:4000/health (liveness) · http://localhost:4000/ready (Postgres + Redis, 503 jika down)
 - Ngrok: https://domain.ngrok.free.app/webhook/midtrans
 
+## Biteship (T-08)
+
+Tanpa `BITESHIP_API_KEY` aplikasi memakai **stub** ongkir & resi simulasi (dev saja). Untuk Biteship asli:
+
+1. Dashboard Biteship → aktifkan *Testing Mode* → Integrations → buat API key → isi `BITESHIP_API_KEY` di `apps/api/.env`.
+2. Karang `BITESHIP_WEBHOOK_SECRET` (min 16 karakter). Di dashboard: Integrations → Webhook → URL `https://domain.ngrok.free.app/webhook/biteship`, event `order.status` + `order.waybill_id`, kirim secret yang sama sebagai header `x-webhook-secret` (atau `Authorization`).
+3. `npm run db:migrate` (migrasi 0003: kolom tracking + tabel `order_tracking_events`).
+4. `npm run db:backfill-areas` — isi `biteship_area_id` untuk alamat/seed lama. Alamat & toko baru ter-resolve otomatis saat disimpan.
+
+Alur: checkout → rate real-time (area id) → bayar → seller `POST /api/seller/orders/:id/shipment` (resi dibuat, order `processing`) → webhook `order.status` (`picked/in_transit` → `shipped`, `delivered` → `delivered`) → buyer melihat timeline di `/orders/:id` (auto-refresh 30 dtk; fallback tarik ke Biteship tiap ≥3 menit bila webhook tidak sampai). Kurir instant (GoSend/Grab) tidak muncul di rate by area id.
+
 ## Scripts (root)
 
 | Script                | Fungsi                                                     |
@@ -56,6 +67,7 @@ Salin domain, simpan di midtrans ke Payment -> Notification URL -> isi Payment N
 | `db:generate`         | Generate migration dari perubahan schema Drizzle           |
 | `db:migrate`          | Jalankan migration                                         |
 | `db:seed`             | Isi data demo (menolak jika tabel users tidak kosong)      |
+| `db:backfill-areas`   | Isi `biteship_area_id` yang masih kosong (butuh API key)   |
 | `db:reset`            | **Hapus semua data** + migrate + seed (diblokir di production) |
 | `db:studio`           | Drizzle Studio                                             |
 | `typecheck` / `build` / `lint` | Turbo pipeline                                    |

@@ -4,7 +4,7 @@ import { accounts, sessions } from "./auth";
 import { carts, cartItems } from "./carts";
 import { categories, productVariants, products } from "./catalog";
 import { conversations, messages, notifications, payouts, reviews, wishlists } from "./engagement";
-import { checkouts, orderItems, orders, voucherUsages } from "./orders";
+import { checkouts, orderItems, orderTrackingEvents, orders, voucherUsages } from "./orders";
 import { sellers } from "./sellers";
 import { users } from "./users";
 import { vouchers } from "./vouchers";
@@ -76,6 +76,11 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   user: one(users, { fields: [orders.userId], references: [users.id] }),
   seller: one(sellers, { fields: [orders.sellerId], references: [sellers.id] }),
   items: many(orderItems),
+  trackingEvents: many(orderTrackingEvents),
+}));
+
+export const orderTrackingEventsRelations = relations(orderTrackingEvents, ({ one }) => ({
+  order: one(orders, { fields: [orderTrackingEvents.orderId], references: [orders.id] }),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({

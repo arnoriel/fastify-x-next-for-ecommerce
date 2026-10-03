@@ -20,6 +20,49 @@ const addressSnapshotViewSchema = z.object({
   street: z.string(),
 });
 
+// ---------- Tracking pengiriman (T-08, Biteship) ----------
+
+/** Status pengiriman Biteship (order.status webhook & tracking API). */
+export const SHIPPING_STATUS_LABELS: Record<string, string> = {
+  confirmed: "Pesanan terdaftar di kurir",
+  scheduled: "Pickup dijadwalkan",
+  allocated: "Kurir telah dialokasikan",
+  picking_up: "Kurir menuju lokasi penjual",
+  picked: "Paket diambil kurir",
+  in_transit: "Paket dalam perjalanan",
+  dropping_off: "Paket sedang diantar ke alamat tujuan",
+  delivered: "Paket telah diterima",
+  on_hold: "Pengiriman tertahan sementara",
+  cancelled: "Pengiriman dibatalkan",
+  return_in_transit: "Paket dalam perjalanan kembali ke penjual",
+  returned: "Paket dikembalikan ke penjual",
+  rejected: "Pengiriman ditolak kurir",
+  disposed: "Paket dimusnahkan",
+  courier_not_found: "Kurir belum ditemukan",
+};
+
+export const shippingStatusLabel = (status: string): string => SHIPPING_STATUS_LABELS[status] ?? status.replaceAll("_", " ");
+
+export const orderTrackingEventSchema = z.object({
+  status: z.string(),
+  label: z.string(),
+  note: z.string().nullable(),
+  occurredAt: z.iso.datetime(),
+});
+export type OrderTrackingEvent = z.infer<typeof orderTrackingEventSchema>;
+
+export const orderTrackingSchema = z.object({
+  // null = belum ada pengiriman terdaftar di kurir (seller belum memproses).
+  shippingStatus: z.string().nullable(),
+  shippingStatusLabel: z.string().nullable(),
+  trackingLink: z.string().nullable(),
+  // true = tidak akan ada update lagi (FE berhenti polling).
+  isFinal: z.boolean(),
+  // Terbaru di atas.
+  events: z.array(orderTrackingEventSchema),
+});
+export type OrderTracking = z.infer<typeof orderTrackingSchema>;
+
 /** Order milik buyer, dipakai baris riwayat & detail — superset dari OrderView T-06 (checkout). */
 export const orderDetailSchema = z.object({
   id: z.string(),
@@ -37,6 +80,7 @@ export const orderDetailSchema = z.object({
   total: z.number(),
   note: z.string().nullable(),
   items: z.array(orderItemViewSchema),
+  tracking: orderTrackingSchema,
   // Buyer bisa konfirmasi terima barang hanya saat status shipped/delivered.
   canConfirmReceived: z.boolean(),
   // Order completed → item bisa direview (dicek per-item lagi di endpoint review nanti/T-12).
@@ -48,7 +92,7 @@ export const orderDetailSchema = z.object({
 });
 export type OrderDetail = z.infer<typeof orderDetailSchema>;
 
-export const orderListItemSchema = orderDetailSchema.omit({ items: true }).extend({
+export const orderListItemSchema = orderDetailSchema.omit({ items: true, tracking: true }).extend({
   itemCount: z.number(),
   thumbnailUrl: z.string().nullable(),
 });

@@ -10,13 +10,21 @@ import { db, schema } from "../../db";
 import { httpError } from "../../lib/http-error";
 import { requireAuth } from "../../plugins/auth";
 import { createNotification } from "../notification/notification.service";
+import { buildTracking, syncTrackingIfStale } from "../shipping/shipping.service";
 
 type OrderRow = NonNullable<Awaited<ReturnType<typeof loadOrder>>>;
+// Baris riwayat tidak memuat event tracking (hemat query) — cukup field ringkasan.
+type OrderSummarySource = Omit<OrderRow, "trackingEvents">;
 
 async function loadOrder(userId: string, orderId: string) {
   return db.query.orders.findFirst({
     where: (o, { and: andd, eq: eqq }) => andd(eqq(o.id, orderId), eqq(o.userId, userId)),
-    with: { items: true, seller: true },
+    with: {
+      items: true,
+      seller: true,
+      // Terbaru di atas — langsung dipakai timeline tracking di detail order.
+      trackingEvents: { orderBy: (e, { desc: descc }) => descc(e.occurredAt) },
+    },
   });
 }
 
@@ -24,8 +32,9 @@ function canConfirm(status: OrderRow["status"]): boolean {
   return (CONFIRMABLE_ORDER_STATUSES as readonly string[]).includes(status);
 }
 
-function serializeDetail(order: OrderRow) {
-  return orderDetailSchema.parse({
+/** Field ringkasan yang sama untuk baris riwayat & detail (tanpa items/tracking). */
+function serializeSummary(order: OrderSummarySource) {
+  return {
     id: order.id,
     orderNo: order.orderNo,
     sellerId: order.sellerId,
@@ -48,6 +57,18 @@ function serializeDetail(order: OrderRow) {
     discount: order.discount,
     total: order.total,
     note: order.note,
+    canConfirmReceived: canConfirm(order.status),
+    canReview: order.status === "completed",
+    createdAt: order.createdAt.toISOString(),
+    shippedAt: order.shippedAt ? order.shippedAt.toISOString() : null,
+    deliveredAt: order.deliveredAt ? order.deliveredAt.toISOString() : null,
+    completedAt: order.completedAt ? order.completedAt.toISOString() : null,
+  };
+}
+
+function serializeDetail(order: OrderRow) {
+  return orderDetailSchema.parse({
+    ...serializeSummary(order),
     items: order.items.map((i) => ({
       id: i.id,
       productId: i.productId,
@@ -59,12 +80,7 @@ function serializeDetail(order: OrderRow) {
       quantity: i.quantity,
       subtotal: i.subtotal,
     })),
-    canConfirmReceived: canConfirm(order.status),
-    canReview: order.status === "completed",
-    createdAt: order.createdAt.toISOString(),
-    shippedAt: order.shippedAt ? order.shippedAt.toISOString() : null,
-    deliveredAt: order.deliveredAt ? order.deliveredAt.toISOString() : null,
-    completedAt: order.completedAt ? order.completedAt.toISOString() : null,
+    tracking: buildTracking(order),
   });
 }
 
@@ -92,15 +108,11 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
     });
 
     return orderListResponseSchema.parse({
-      items: rows.map((o) => {
-        const detail = serializeDetail(o);
-        const { items, ...rest } = detail;
-        return {
-          ...rest,
-          itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
-          thumbnailUrl: items[0]?.imageUrl ?? null,
-        };
-      }),
+      items: rows.map((o) => ({
+        ...serializeSummary(o),
+        itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
+        thumbnailUrl: o.items[0]?.imageUrl ?? null,
+      })),
       page: query.page,
       pageSize: query.pageSize,
       total: count,
@@ -111,8 +123,13 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/api/orders/:id", { preHandler: requireAuth }, async (req) => {
     const { id } = req.params as { id: string };
-    const order = await loadOrder(req.user!.id, id);
+    let order = await loadOrder(req.user!.id, id);
     if (!order) throw httpError(404, "ORDER_NOT_FOUND", "Pesanan tidak ditemukan.");
+
+    // T-08: tarik tracking terbaru dari kurir bila sudah lama tidak ter-update (fallback webhook tidak sampai).
+    // Best-effort & throttled — buyer cukup membuka halaman ini, tanpa aksi manual.
+    if (await syncTrackingIfStale(order)) order = (await loadOrder(req.user!.id, id)) ?? order;
+
     return serializeDetail(order);
   });
 

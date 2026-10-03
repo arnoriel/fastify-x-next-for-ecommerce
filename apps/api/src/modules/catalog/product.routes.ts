@@ -14,6 +14,7 @@ import { httpError } from "../../lib/http-error";
 import { isOwnedR2Url, presignProductImageUpload } from "../../lib/storage";
 import { uniqueSlug } from "../../lib/slug";
 import { requireRole } from "../../plugins/auth";
+import { requireApprovedSeller } from "../seller/seller.guard";
 
 type ProductRow = typeof schema.products.$inferSelect;
 type VariantRow = typeof schema.productVariants.$inferSelect;
@@ -59,16 +60,6 @@ function serializeProduct(row: ProductRow): Product {
 
 function serializeProductWithVariants(row: ProductRow, variants: VariantRow[]): ProductWithVariants {
   return { ...serializeProduct(row), variants: variants.map(serializeVariant) };
-}
-
-/** Seller aktif milik user login. 403 kalau belum jadi seller / belum approved. */
-async function requireApprovedSeller(userId: string) {
-  const seller = await db.query.sellers.findFirst({ where: (s, { eq: eqq }) => eqq(s.userId, userId) });
-  if (!seller) throw httpError(403, "NOT_A_SELLER", "Anda belum terdaftar sebagai seller.");
-  if (seller.status !== "approved") {
-    throw httpError(403, "SELLER_NOT_APPROVED", "Toko Anda belum disetujui admin.");
-  }
-  return seller;
 }
 
 async function assertCategoryActive(categoryId: string) {

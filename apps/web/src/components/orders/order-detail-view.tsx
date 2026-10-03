@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FaCircleCheck, FaTriangleExclamation } from "react-icons/fa6";
 import type { OrderDetail, OrderStatusValue } from "@ecommerce/shared";
-import { confirmOrderReceived } from "@/lib/order-api";
+import { confirmOrderReceived, getOrder } from "@/lib/order-api";
 import { formatRupiah } from "@/lib/format";
+import { TrackingTimeline } from "./tracking-timeline";
+
+/** Interval refresh otomatis selama pesanan masih bergerak (server membatasi sinkron ke kurir tiap ≥3 menit). */
+const TRACKING_POLL_MS = 30_000;
+const POLLED_STATUSES: readonly OrderStatusValue[] = ["paid", "processing", "shipped"];
 
 const STATUS_LABEL: Record<OrderStatusValue, string> = {
   pending_payment: "Menunggu pembayaran",
@@ -23,6 +28,20 @@ export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+
+  // T-08: perubahan status pengiriman (webhook Biteship) tampil tanpa buyer perlu reload manual.
+  // Berhenti saat tab tersembunyi, pesanan sudah tidak bergerak, atau tracking sudah final.
+  const shouldPoll = POLLED_STATUSES.includes(order.status) && !order.tracking.isFinal;
+  useEffect(() => {
+    if (!shouldPoll) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      getOrder(order.id)
+        .then(setOrder)
+        .catch(() => undefined); // gagal sesekali (offline/timeout) tidak perlu mengganggu buyer
+    }, TRACKING_POLL_MS);
+    return () => clearInterval(timer);
+  }, [shouldPoll, order.id]);
 
   async function handleConfirm() {
     setConfirming(true);
@@ -76,13 +95,32 @@ export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
         </ul>
       </section>
 
-      {order.trackingNumber && (
+      {(order.trackingNumber || order.tracking.events.length > 0) && (
         <section className="card">
-          <h2 className="py-2 text-sm font-semibold text-[var(--fg)]">Pengiriman</h2>
-          <p className="text-sm">
-            {order.courierCode?.toUpperCase()} {order.courierService} — No. Resi:{" "}
-            <strong>{order.trackingNumber}</strong>
+          <div className="flex items-center justify-between py-2">
+            <h2 className="text-sm font-semibold text-[var(--fg)]">Pengiriman</h2>
+            {order.tracking.shippingStatusLabel && <span className="pill">{order.tracking.shippingStatusLabel}</span>}
+          </div>
+          <p className="pb-3 text-sm">
+            {order.courierCode?.toUpperCase()} {order.courierService}
+            {order.trackingNumber && (
+              <>
+                {" "}
+                — No. Resi: <strong>{order.trackingNumber}</strong>
+              </>
+            )}
           </p>
+          <TrackingTimeline tracking={order.tracking} />
+          {order.tracking.trackingLink && (
+            <a
+              className="small mt-3 inline-block underline"
+              href={order.tracking.trackingLink}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Lacak di situs kurir
+            </a>
+          )}
         </section>
       )}
 

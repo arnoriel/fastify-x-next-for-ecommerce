@@ -21,6 +21,7 @@
     "db:generate": "npm run db:generate -w @ecommerce/api",
     "db:migrate": "npm run db:migrate -w @ecommerce/api",
     "db:seed": "npm run db:seed -w @ecommerce/api",
+    "db:backfill-areas": "npm run db:backfill-areas -w @ecommerce/api",
     "db:studio": "npm run db:studio -w @ecommerce/api",
     "db:reset": "npm run db:reset -w @ecommerce/api",
     "infra:up": "npm run infra:up -w @ecommerce/api",

@@ -12,6 +12,7 @@ import { presignSellerDocumentUpload } from "../../lib/storage";
 import { uniqueSlug } from "../../lib/slug";
 import { requireAuth, requireRole } from "../../plugins/auth";
 import { createNotification } from "../notification/notification.service";
+import { resolveBiteshipAreaId } from "../shipping/area.service";
 
 async function slugExists(slug: string) {
   const row = await db.query.sellers.findFirst({ where: (s, { eq: eqq }) => eqq(s.slug, slug) });
@@ -53,6 +54,12 @@ export const sellerOnboardingRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const slug = await uniqueSlug(input.storeName, slugExists);
+    // T-08: area_id Biteship untuk origin rate ongkir. Null kalau tidak ketemu → di-backfill belakangan.
+    const pickupBiteshipAreaId = await resolveBiteshipAreaId({
+      district: input.pickupDistrict,
+      city: input.pickupCity,
+      postalCode: input.pickupPostalCode,
+    });
 
     const values = {
       userId,
@@ -67,6 +74,7 @@ export const sellerOnboardingRoutes: FastifyPluginAsync = async (app) => {
       pickupDistrict: input.pickupDistrict,
       pickupPostalCode: input.pickupPostalCode,
       pickupStreet: input.pickupStreet,
+      pickupBiteshipAreaId,
     };
 
     const seller = existing

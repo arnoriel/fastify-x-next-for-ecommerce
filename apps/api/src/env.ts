@@ -51,6 +51,12 @@ const baseSchema = z.object({
   // Di dev: gunakan ngrok/cloudflared tunnel. Di production: domain API kamu.
   // Default ke BETTER_AUTH_URL (atau API_HOST:API_PORT) kalau tidak diisi.
   API_PUBLIC_URL: optionalUrl,
+  // --- Biteship (T-08) — dashboard.biteship.com > Integrations > API key (mode Testing = prefix biteship_test.) ---
+  // Kosong = pakai StubShippingProvider (ongkir & resi simulasi, tanpa network call) — hanya untuk dev.
+  BITESHIP_API_KEY: optionalStr,
+  // Shared secret webhook /webhook/biteship. Isi sama persis dengan header auth yang didaftarkan
+  // di dashboard Biteship > Integrations > Webhook. Kosong = webhook ditolak (503).
+  BITESHIP_WEBHOOK_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(16, "minimal 16 karakter").optional()),
 });
 
 const schema = baseSchema.superRefine((v, ctx) => {
@@ -66,6 +72,27 @@ const schema = baseSchema.superRefine((v, ctx) => {
       code: "custom",
       path: ["MIDTRANS_SANDBOX"],
       message: "MIDTRANS_SANDBOX masih true di production — set ke false dan ganti ke production key",
+    });
+  }
+  if (v.NODE_ENV === "production" && !v.BITESHIP_API_KEY) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["BITESHIP_API_KEY"],
+      message: "BITESHIP_API_KEY wajib di production (tanpa itu ongkir & resi memakai stub simulasi)",
+    });
+  }
+  if (v.NODE_ENV === "production" && v.BITESHIP_API_KEY?.startsWith("biteship_test")) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["BITESHIP_API_KEY"],
+      message: "BITESHIP_API_KEY masih key testing (biteship_test.*) di production — ganti ke key live",
+    });
+  }
+  if (v.NODE_ENV === "production" && !v.BITESHIP_WEBHOOK_SECRET) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["BITESHIP_WEBHOOK_SECRET"],
+      message: "BITESHIP_WEBHOOK_SECRET wajib di production agar webhook tracking Biteship bisa diverifikasi",
     });
   }
   if (v.NODE_ENV === "production" && v.BETTER_AUTH_SECRET.includes("change_me")) {

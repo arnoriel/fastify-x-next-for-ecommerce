@@ -81,7 +81,13 @@ export const orders = pgTable(
     total: integer("total").notNull(),
     // Biteship (T-08).
     biteshipOrderId: text("biteship_order_id"),
-    trackingNumber: text("tracking_number"),
+    biteshipTrackingId: text("biteship_tracking_id"), // id untuk GET /v1/trackings/:id
+    trackingNumber: text("tracking_number"), // waybill / resi kurir
+    // Status pengiriman terakhir dari Biteship (confirmed, picked, in_transit, delivered, ...).
+    shippingStatus: text("shipping_status"),
+    trackingLink: text("tracking_link"),
+    // Terakhir sinkron ke tracking API (throttle refresh saat buyer membuka detail order).
+    trackingSyncedAt: timestamp("tracking_synced_at", { withTimezone: true }),
     note: text("note"),
     shippedAt: timestamp("shipped_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
@@ -92,9 +98,33 @@ export const orders = pgTable(
     uniqueIndex("orders_order_no_uq").on(t.orderNo),
     // Satu order per seller dalam satu checkout.
     uniqueIndex("orders_checkout_seller_uq").on(t.checkoutId, t.sellerId),
+    // Lookup webhook Biteship (order_id Biteship → order kita). Partial: order tanpa shipment boleh banyak.
+    uniqueIndex("orders_biteship_order_uq").on(t.biteshipOrderId).where(sql`${t.biteshipOrderId} is not null`),
     index("orders_user_idx").on(t.userId),
     index("orders_seller_status_idx").on(t.sellerId, t.status),
     check("orders_amounts_chk", sql`${t.subtotal} >= 0 and ${t.shippingCost} >= 0 and ${t.discount} >= 0 and ${t.total} >= 0`),
+  ],
+);
+
+// Histori pengiriman per order (T-08). Diisi webhook Biteship, booking seller, dan sinkron tracking API.
+export const orderTrackingEvents = pgTable(
+  "order_tracking_events",
+  {
+    id: text("id").primaryKey().$defaultFn(newId),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    status: text("status").notNull(), // status Biteship
+    note: text("note"),
+    // Waktu kejadian: dari tracking API = waktu kurir; dari webhook/booking = waktu diterima server.
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    source: text("source").$type<"webhook" | "sync" | "system">().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("order_tracking_events_order_idx").on(t.orderId, t.occurredAt),
+    // Cegah duplikat dari sinkron paralel / webhook retry pada kejadian yang sama persis.
+    uniqueIndex("order_tracking_events_uq").on(t.orderId, t.status, t.occurredAt),
   ],
 );
 

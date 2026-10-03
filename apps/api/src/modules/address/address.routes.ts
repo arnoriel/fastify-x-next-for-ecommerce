@@ -4,6 +4,7 @@ import { type Address, addressSchema, createAddressSchema, updateAddressSchema }
 import { db, schema } from "../../db";
 import { httpError } from "../../lib/http-error";
 import { requireAuth } from "../../plugins/auth";
+import { resolveBiteshipAreaId } from "../shipping/area.service";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -56,6 +57,10 @@ export const addressRoutes: FastifyPluginAsync = async (app) => {
     const existingCount = await db.query.addresses.findFirst({ where: (a, { eq: eqq }) => eqq(a.userId, userId) });
     const makeDefault = input.isDefault || !existingCount;
 
+    // T-08: area_id Biteship dicari otomatis (sebelum transaksi — network call tidak boleh menahan koneksi DB).
+    // Null kalau tidak ketemu / Biteship down → alamat tetap tersimpan, di-backfill belakangan.
+    const areaId = input.biteshipAreaId || (await resolveBiteshipAreaId(input));
+
     const row = await db.transaction(async (tx) => {
       if (makeDefault) await tx.update(schema.addresses).set({ isDefault: false }).where(eq(schema.addresses.userId, userId));
       const [created] = await tx
@@ -70,7 +75,7 @@ export const addressRoutes: FastifyPluginAsync = async (app) => {
           district: input.district,
           postalCode: input.postalCode,
           street: input.street,
-          biteshipAreaId: input.biteshipAreaId ?? null,
+          biteshipAreaId: areaId,
           isDefault: makeDefault,
         })
         .returning();
@@ -87,6 +92,21 @@ export const addressRoutes: FastifyPluginAsync = async (app) => {
     const userId = req.user!.id;
     const existing = await loadOwnedAddress(userId, id);
 
+    // T-08: lokasi berubah → area_id lama tidak valid lagi, cari ulang. Area belum pernah ketemu → coba lagi.
+    const location = {
+      district: input.district ?? existing.district,
+      city: input.city ?? existing.city,
+      postalCode: input.postalCode ?? existing.postalCode,
+    };
+    const locationChanged =
+      location.district !== existing.district ||
+      location.city !== existing.city ||
+      location.postalCode !== existing.postalCode ||
+      (input.province !== undefined && input.province !== existing.province);
+    const areaId =
+      input.biteshipAreaId ||
+      (locationChanged || !existing.biteshipAreaId ? await resolveBiteshipAreaId(location) : existing.biteshipAreaId);
+
     const row = await db.transaction(async (tx) => {
       if (input.isDefault === true) await setAsDefault(tx, userId, id);
       const [updated] = await tx
@@ -100,7 +120,7 @@ export const addressRoutes: FastifyPluginAsync = async (app) => {
           district: input.district ?? existing.district,
           postalCode: input.postalCode ?? existing.postalCode,
           street: input.street ?? existing.street,
-          biteshipAreaId: input.biteshipAreaId === undefined ? existing.biteshipAreaId : input.biteshipAreaId,
+          biteshipAreaId: areaId,
           isDefault: input.isDefault === true ? true : existing.isDefault,
         })
         .where(eq(schema.addresses.id, id))
