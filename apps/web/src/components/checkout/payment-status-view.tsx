@@ -9,6 +9,9 @@ import { initiatePayment, manualCheckStatus, pollCheckout } from "@/lib/checkout
 import { formatRupiah } from "@/lib/format";
 
 const POLL_INTERVAL_MS = 4000;
+// Tiap N poll, minta backend sinkron langsung ke Midtrans — fallback otomatis kalau webhook
+// tidak sampai (mis. dev tanpa tunnel). ~16 dtk, jadi tidak membebani API Midtrans.
+const RECONCILE_EVERY_N_POLLS = 4;
 // Setelah N menit tanpa bayar, tawarkan manual check ke Midtrans (fallback webhook gagal).
 const MANUAL_CHECK_AFTER_MS = 90_000;
 const FINAL_STATUSES = new Set(["paid", "expired", "failed", "cancelled"]);
@@ -25,14 +28,20 @@ export function PaymentStatusView({ checkout: initial }: { checkout: CheckoutVie
   // di backend, halaman ini ter-update otomatis tanpa refresh manual.
   useEffect(() => {
     if (FINAL_STATUSES.has(checkout.status)) return;
-    const interval = setInterval(() => {
-      pollCheckout(checkout.id)
-        .then((updated) => {
-          setCheckout(updated);
-        })
-        .catch(() => {
-          // polling gagal sementara (network) — coba lagi di interval berikutnya.
-        });
+    let polls = 0;
+    let busy = false; // cegah request menumpuk saat jaringan lambat
+    const interval = setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      polls += 1;
+      try {
+        if (polls % RECONCILE_EVERY_N_POLLS === 0) await manualCheckStatus(checkout.id);
+        setCheckout(await pollCheckout(checkout.id));
+      } catch {
+        // gagal sementara (network) — coba lagi di interval berikutnya.
+      } finally {
+        busy = false;
+      }
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [checkout.id, checkout.status]);

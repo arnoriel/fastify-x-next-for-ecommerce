@@ -27,7 +27,7 @@ async function getCheckout(id: string) {
 
 // T-06B: halaman ini adalah "halaman penutup" buyer setelah submit checkout — menampilkan
 // status pembayaran real-time (pending/paid/expired/failed) via polling client-side, karena
-// webhook Duitku (T-07) mengubah status di backend tanpa buyer perlu refresh manual.
+// webhook Midtrans (T-07) mengubah status di backend tanpa buyer perlu refresh manual.
 export default async function CheckoutStatusPage({ params }: { params: Promise<{ checkoutId: string }> }) {
   const { checkoutId } = await params;
   const checkout = await getCheckout(checkoutId);

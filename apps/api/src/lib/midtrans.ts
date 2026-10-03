@@ -4,25 +4,28 @@
  * Production: ganti MIDTRANS_SANDBOX=false di .env
  *
  * Semua amount dalam integer IDR (Rupiah) — Midtrans tidak mendukung desimal.
+ * File ini murni "transport + helper" (tanpa akses DB); logika bisnis ada di
+ * modules/payment/payment.service.ts.
  */
 
-import { createHash, createHmac } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 import { env } from "../env";
 
 // ---------- Config ----------
 
-const BASE_URL = env.MIDTRANS_SANDBOX
+const SNAP_URL = env.MIDTRANS_SANDBOX
   ? "https://app.sandbox.midtrans.com/snap/v1"
   : "https://app.midtrans.com/snap/v1";
 
-const STATUS_BASE_URL = env.MIDTRANS_SANDBOX
-  ? "https://api.sandbox.midtrans.com/v2"
-  : "https://api.midtrans.com/v2";
+const CORE_URL = env.MIDTRANS_SANDBOX ? "https://api.sandbox.midtrans.com/v2" : "https://api.midtrans.com/v2";
+
+const REQUEST_TIMEOUT_MS = 10_000;
+// Batas panjang field item_details Midtrans (id & name).
+const ITEM_FIELD_MAX = 50;
 
 /** Basic Auth header dari server key. */
-function authHeader(): string {
-  return "Basic " + Buffer.from(env.MIDTRANS_SERVER_KEY + ":").toString("base64");
-}
+const authHeader = () => "Basic " + Buffer.from(env.MIDTRANS_SERVER_KEY + ":").toString("base64");
 
 // ---------- Types ----------
 
@@ -38,7 +41,30 @@ export type MidtransTransactionStatus =
   | "partial_refund"
   | "authorize";
 
-export type MidtransFraudStatus = "accept" | "challenge" | "deny";
+/**
+ * Payload callback POST webhook Midtrans → /webhook/midtrans.
+ * `looseObject`: field tambahan per metode bayar (va_numbers, dst.) dibiarkan lewat.
+ * `transaction_status` sengaja z.string() (bukan enum) — status baru dari Midtrans tidak boleh
+ * membuat parse gagal → 4xx → Midtrans retry terus; status tak dikenal diabaikan di resolveCheckoutStatus.
+ */
+export const midtransWebhookSchema = z.looseObject({
+  order_id: z.string().min(1), // = checkout.invoiceNo kita
+  status_code: z.string().min(1),
+  gross_amount: z.string().min(1), // string IDR, mis. "150000.00"
+  signature_key: z.string().min(1),
+  transaction_status: z.string().min(1),
+  transaction_id: z.string().default(""),
+  payment_type: z.string().default(""),
+  transaction_time: z.string().default(""), // "YYYY-MM-DD HH:MM:SS" (WIB)
+  fraud_status: z.string().optional(),
+});
+export type MidtransWebhookPayload = z.infer<typeof midtransWebhookSchema>;
+
+/** Subset field yang sama-sama ada di webhook & GET status — input tunggal untuk sinkronisasi status. */
+export type MidtransTxResult = Pick<
+  MidtransWebhookPayload,
+  "transaction_status" | "fraud_status" | "payment_type" | "transaction_id" | "transaction_time" | "gross_amount"
+>;
 
 /** Response dari Snap /transactions (create payment). */
 export interface MidtransSnapResponse {
@@ -46,98 +72,92 @@ export interface MidtransSnapResponse {
   redirect_url: string;
 }
 
-/** Payload callback POST webhook dari Midtrans ke /webhook/midtrans. */
-export interface MidtransWebhookPayload {
-  transaction_id: string;
-  order_id: string; // = checkout.invoiceNo kita
-  payment_type: string;
-  transaction_status: MidtransTransactionStatus;
-  fraud_status?: MidtransFraudStatus;
-  gross_amount: string; // string IDR, mis. "150000.00"
-  signature_key: string;
+/** Response GET /v2/{orderId}/status (rekonsiliasi manual). */
+export interface MidtransStatusResponse extends MidtransTxResult {
+  order_id: string;
   status_code: string;
-  transaction_time: string; // "YYYY-MM-DD HH:MM:SS"
-  currency: string; // "IDR"
-  // Bisa ada field tambahan tergantung metode — hanya pakai yang kita perlu.
+  status_message: string;
   [key: string]: unknown;
 }
 
-/** Status dari GET /v2/{orderId}/status (untuk rekonsiliasi manual). */
-export interface MidtransStatusResponse {
-  transaction_id: string;
-  order_id: string;
-  payment_type: string;
-  transaction_status: MidtransTransactionStatus;
-  fraud_status?: MidtransFraudStatus;
-  gross_amount: string;
-  status_code: string;
-  status_message: string;
-  transaction_time: string;
-  currency: string;
-  [key: string]: unknown;
-}
+/**
+ * Hasil cek status:
+ * - `null`           → Midtrans tidak terjangkau / error (caller: coba lagi nanti, jangan ubah state)
+ * - `found: false`   → transaksi belum ada di Midtrans (buyer belum pilih metode bayar di Snap, atau tidak pernah dibuat)
+ */
+export type MidtransStatusResult = { found: true; data: MidtransStatusResponse } | { found: false } | null;
 
 // ---------- Helpers ----------
 
 /**
- * Verifikasi signature_key webhook dari Midtrans.
- * Formula: SHA512(orderId + statusCode + grossAmount + serverKey)
- *
- * Midtrans mendokumentasikan ini di:
- * https://docs.midtrans.com/reference/core-api-notification
+ * Verifikasi signature_key webhook: SHA512(orderId + statusCode + grossAmount + serverKey).
+ * Ref: https://docs.midtrans.com/reference/core-api-notification
+ * Perbandingan constant-time (timingSafeEqual) mencegah timing attack.
  */
-export function verifySignature(payload: MidtransWebhookPayload): boolean {
-  const raw = payload.order_id + payload.status_code + payload.gross_amount + env.MIDTRANS_SERVER_KEY;
-  const expected = createHash("sha512").update(raw).digest("hex");
-  // Constant-time comparison mencegah timing attack.
-  if (expected.length !== payload.signature_key.length) return false;
-  return createHmac("sha256", "timing").update(expected).digest("hex")
-    === createHmac("sha256", "timing").update(payload.signature_key).digest("hex");
+export function verifySignature(p: Pick<MidtransWebhookPayload, "order_id" | "status_code" | "gross_amount" | "signature_key">): boolean {
+  const expected = createHash("sha512")
+    .update(p.order_id + p.status_code + p.gross_amount + env.MIDTRANS_SERVER_KEY)
+    .digest();
+  const given = Buffer.from(p.signature_key, "hex");
+  return given.length === expected.length && timingSafeEqual(expected, given);
 }
 
 /**
- * Konversi transaction_status + fraud_status ke checkout status kita.
+ * transaction_status + fraud_status Midtrans → status checkout kita. `null` = belum final.
+ * Ref: https://docs.midtrans.com/reference/transaction-status
  *
- * Mapping referensi: https://docs.midtrans.com/reference/transaction-status
- *
- * Edge cases:
- * - "capture" + fraud_status "challenge" → tetap pending sampai ada settlement / accept.
- * - "authorize" → pre-auth (kartu kredit) — anggap pending sampai capture/settlement.
- * - "partial_refund" / "refund" → tetap paid di checkout, status refund diurus admin.
+ * - capture + fraud challenge/deny → tetap pending (tunggu resolusi review fraud).
+ * - authorize (pre-auth kartu) / pending / refund / partial_refund / status tak dikenal → belum final.
  */
-export function resolveCheckoutStatus(
-  txStatus: MidtransTransactionStatus,
-  fraudStatus?: MidtransFraudStatus,
-): "paid" | "failed" | "expired" | null {
+export function resolveCheckoutStatus(txStatus: string, fraudStatus?: string): "paid" | "failed" | "expired" | null {
   switch (txStatus) {
     case "settlement":
       return "paid";
     case "capture":
-      // Capture tanpa fraud review, atau sudah accept → paid.
-      if (!fraudStatus || fraudStatus === "accept") return "paid";
-      // challenge / deny → tunggu resolusi.
-      return null;
+      return !fraudStatus || fraudStatus === "accept" ? "paid" : null;
     case "deny":
     case "cancel":
     case "failure":
       return "failed";
     case "expire":
       return "expired";
-    // pending / authorize / refund / partial_refund → belum final, jangan update status.
     default:
       return null;
+  }
+}
+
+/** transaction_time Midtrans berformat "YYYY-MM-DD HH:MM:SS" dalam WIB (UTC+7), bukan zona server. */
+export function parseMidtransTime(value: string): Date {
+  const parsed = new Date(`${value.trim().replace(" ", "T")}+07:00`);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+/** fetch + Basic Auth + timeout. Mengembalikan null kalau network error/timeout (tidak pernah throw). */
+async function midtransFetch(url: string, init: RequestInit = {}): Promise<Response | null> {
+  try {
+    return await fetch(url, {
+      ...init,
+      headers: { Accept: "application/json", Authorization: authHeader(), ...init.headers },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    console.error(`[midtrans] ${init.method ?? "GET"} ${url} network error:`, err);
+    return null;
   }
 }
 
 // ---------- API Calls ----------
 
 /**
- * Buat Snap payment transaction.
- * Mengembalikan redirect_url yang bisa dibuka buyer untuk bayar (Snap Redirect),
- * atau null + log error kalau Midtrans API tidak bisa dihubungi.
+ * Buat Snap payment transaction → redirect_url untuk dibuka buyer (Snap Redirect).
+ * Mengembalikan null (+ log) kalau Midtrans tidak bisa dihubungi / menolak request.
  *
- * Edge case: grandTotal = 0 (full voucher) → skip, kembalikan null supaya order bisa
- * langsung `paid` tanpa melewati Midtrans (dihandle di checkout route, bukan di sini).
+ * Edge cases:
+ * - grossAmount < 1 → null (Snap min 1 IDR). Full voucher ditangani di layer service, bukan di sini.
+ * - Sum(item price × qty) HARUS sama dengan grossAmount, kalau tidak Midtrans menolak (400).
+ * - id/name item dipotong 50 karakter (batas Midtrans).
+ * - expiryMinutes menyamakan masa berlaku Snap dengan checkout.expiresAt supaya status `expire`
+ *   dari Midtrans sinkron dengan batas waktu internal.
  */
 export async function createTransaction(params: {
   orderId: string; // = invoiceNo checkout
@@ -145,74 +165,58 @@ export async function createTransaction(params: {
   customerName: string;
   customerEmail: string;
   items: { id: string; price: number; quantity: number; name: string }[];
-  callbackUrl?: string; // optional override finish_redirect_url
+  callbackUrl?: string; // finish redirect setelah buyer selesai di Snap
+  expiryMinutes?: number;
 }): Promise<MidtransSnapResponse | null> {
-  // Snap memerlukan amount >= 1 IDR.
   if (params.grossAmount < 1) return null;
 
   const body = {
-    transaction_details: {
-      order_id: params.orderId,
-      gross_amount: params.grossAmount,
-    },
+    transaction_details: { order_id: params.orderId, gross_amount: params.grossAmount },
     customer_details: {
       first_name: params.customerName,
-      email: params.customerEmail,
+      ...(params.customerEmail ? { email: params.customerEmail } : {}),
     },
-    item_details: params.items,
-    callbacks: params.callbackUrl
-      ? { finish: params.callbackUrl }
-      : undefined,
+    item_details: params.items.map((i) => ({
+      ...i,
+      id: i.id.slice(0, ITEM_FIELD_MAX),
+      name: i.name.slice(0, ITEM_FIELD_MAX),
+    })),
+    ...(params.callbackUrl ? { callbacks: { finish: params.callbackUrl } } : {}),
+    ...(params.expiryMinutes ? { expiry: { unit: "minutes", duration: params.expiryMinutes } } : {}),
   };
 
-  try {
-    const res = await fetch(`${BASE_URL}/transactions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: authHeader(),
-        Accept: "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+  const res = await midtransFetch(`${SNAP_URL}/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res) return null;
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => "(no body)");
-      console.error(`[midtrans] createTransaction HTTP ${res.status}: ${text}`);
-      return null;
-    }
-
-    const data = (await res.json()) as MidtransSnapResponse;
-    return data;
-  } catch (err) {
-    // Network error / timeout — jangan crash server, log dan lanjut.
-    console.error("[midtrans] createTransaction network error:", err);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "(no body)");
+    console.error(`[midtrans] createTransaction HTTP ${res.status}: ${text}`);
     return null;
   }
+  return (await res.json()) as MidtransSnapResponse;
 }
 
 /**
- * Cek status transaksi dari Midtrans API secara manual (rekonsiliasi).
- * Berguna saat webhook tidak sampai (missed), atau untuk admin panel.
+ * Cek status transaksi langsung ke Midtrans (rekonsiliasi saat webhook tidak sampai).
+ * Catatan: Midtrans membalas transaksi yang belum ada dengan HTTP 404 ATAU HTTP 200 + body
+ * status_code "404" — keduanya dipetakan ke `{ found: false }`.
  */
-export async function checkTransactionStatus(orderId: string): Promise<MidtransStatusResponse | null> {
-  try {
-    const res = await fetch(`${STATUS_BASE_URL}/${encodeURIComponent(orderId)}/status`, {
-      headers: {
-        Authorization: authHeader(),
-        Accept: "application/json",
-      },
-    });
+export async function checkTransactionStatus(orderId: string): Promise<MidtransStatusResult> {
+  const res = await midtransFetch(`${CORE_URL}/${encodeURIComponent(orderId)}/status`);
+  if (!res) return null;
+  if (res.status === 404) return { found: false };
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => "(no body)");
-      console.error(`[midtrans] checkStatus HTTP ${res.status}: ${text}`);
-      return null;
-    }
-
-    return (await res.json()) as MidtransStatusResponse;
-  } catch (err) {
-    console.error("[midtrans] checkStatus network error:", err);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "(no body)");
+    console.error(`[midtrans] checkStatus HTTP ${res.status}: ${text}`);
     return null;
   }
+
+  const data = (await res.json().catch(() => null)) as MidtransStatusResponse | null;
+  if (!data) return null;
+  return data.status_code === "404" ? { found: false } : { found: true, data };
 }

@@ -18,7 +18,7 @@ export type AddressSnapshot = {
   biteshipAreaId?: string | null;
 };
 
-// 1 checkout = 1 pembayaran Duitku, bisa berisi banyak order (split per seller).
+// 1 checkout = 1 pembayaran Midtrans, bisa berisi banyak order (split per seller).
 export const checkouts = pgTable(
   "checkouts",
   {
