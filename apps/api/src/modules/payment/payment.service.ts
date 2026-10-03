@@ -154,8 +154,37 @@ export async function applyPaymentStatus(
         console.warn("[payment] gagal membuat notifikasi — status pembayaran tetap disimpan:", err);
       }
     }
+    // T-09: seller diberi tahu ada order baru yang siap diproses (best-effort, savepoint).
+    if (next === "paid") await notifySellersOfPaidOrders(tx, checkoutId, checkout.invoiceNo);
     return "applied";
   });
+}
+
+async function notifySellersOfPaidOrders(tx: Tx, checkoutId: string, invoiceNo: string) {
+  try {
+    const paidOrders = await tx
+      .select({ id: schema.orders.id, orderNo: schema.orders.orderNo, sellerUserId: schema.sellers.userId })
+      .from(schema.orders)
+      .innerJoin(schema.sellers, eq(schema.orders.sellerId, schema.sellers.id))
+      .where(and(eq(schema.orders.checkoutId, checkoutId), eq(schema.orders.status, "paid")));
+
+    for (const o of paidOrders) {
+      await tx.transaction((sp) =>
+        createNotification(
+          {
+            userId: o.sellerUserId,
+            type: "order_status",
+            title: "Pesanan baru",
+            body: `Pesanan ${o.orderNo} sudah dibayar dan siap diproses.`,
+            payload: { orderId: o.id, invoiceNo, audience: "seller" },
+          },
+          sp,
+        ),
+      );
+    }
+  } catch (err) {
+    console.warn("[payment] gagal membuat notifikasi seller — status pembayaran tetap disimpan:", err);
+  }
 }
 
 /**

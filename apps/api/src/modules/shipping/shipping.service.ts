@@ -13,6 +13,7 @@
 import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 import { type OrderTracking, orderTrackingSchema, shippingStatusLabel } from "@ecommerce/shared";
 import { db, schema } from "../../db";
+import { httpError } from "../../lib/http-error";
 import { shipmentGateway, type TrackedShipment } from "../../lib/shipping";
 import { createNotification } from "../notification/notification.service";
 
@@ -135,6 +136,52 @@ async function transition(
 
 /** Status lama yang datang telat setelah `delivered` diabaikan — jangan memundurkan status pengiriman. */
 const isStale = (order: OrderRow, incoming: string) => order.shippingStatus === "delivered" && incoming !== "delivered";
+
+// ---------- Serah terima ke kurir oleh seller (T-09) ----------
+
+/**
+ * Seller menandai paket sudah diserahkan ke kurir: `processing` → `shipped` lewat jalur `transition`
+ * yang sama dengan webhook (status "picked"), jadi notifikasi buyer & aturan "hanya maju" identik.
+ *
+ * - Sudah `shipped`/`delivered`/`completed` (klik ganda, webhook lebih dulu) → `changed: false`, tanpa efek.
+ * - Order milik seller lain / tidak ada → 404.
+ * - Belum `processing`, atau booking kurir belum ada/gagal → 409 (seller harus buat pengiriman dulu).
+ */
+export async function markShippedBySeller(params: { orderId: string; sellerId: string }) {
+  return db.transaction(async (tx) => {
+    const [order] = await tx
+      .select()
+      .from(schema.orders)
+      .where(and(eq(schema.orders.id, params.orderId), eq(schema.orders.sellerId, params.sellerId)))
+      .for("update");
+    if (!order) throw httpError(404, "ORDER_NOT_FOUND", "Pesanan tidak ditemukan.");
+
+    if (order.status === "shipped" || order.status === "delivered" || order.status === "completed") {
+      return { order, changed: false };
+    }
+    if (order.status !== "processing") {
+      throw httpError(409, "ORDER_NOT_SHIPPABLE", "Pesanan belum bisa ditandai dikirim pada status saat ini.");
+    }
+    if (!order.biteshipOrderId || FAILED_BOOKING_STATUSES.has(order.shippingStatus ?? "")) {
+      throw httpError(409, "SHIPMENT_NOT_BOOKED", "Buat pengiriman (resi) terlebih dahulu sebelum menandai dikirim.");
+    }
+
+    await tx
+      .insert(schema.orderTrackingEvents)
+      .values({
+        orderId: order.id,
+        status: "picked",
+        note: "Paket diserahkan penjual ke kurir",
+        occurredAt: new Date(),
+        source: "system",
+      })
+      .onConflictDoNothing();
+    await transition(tx, order, "picked", {});
+
+    const [updated] = await tx.select().from(schema.orders).where(eq(schema.orders.id, order.id));
+    return { order: updated!, changed: true };
+  });
+}
 
 // ---------- Webhook ----------
 

@@ -65,15 +65,18 @@ export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
       </div>
 
       {confirmed && (
-        <div className="alert" style={{ background: "var(--card)" }}>
-          <FaCircleCheck aria-hidden />
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--up)] bg-[color-mix(in_srgb,var(--up)_10%,transparent)] px-3.5 py-3 text-sm font-semibold text-[var(--up)]"
+        >
+          <FaCircleCheck aria-hidden className="shrink-0" />
           <span>Terima kasih! Pesanan dikonfirmasi selesai. Yuk beri review produk.</span>
         </div>
       )}
 
       {error && (
-        <div className="alert">
-          <FaTriangleExclamation aria-hidden />
+        <div className="alert flex items-center gap-2" role="alert">
+          <FaTriangleExclamation aria-hidden className="shrink-0" />
           <span>{error}</span>
         </div>
       )}

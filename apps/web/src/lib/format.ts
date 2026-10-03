@@ -23,3 +23,22 @@ export function formatDateTime(iso: string): string {
   }).format(new Date(iso));
   return `${parts} WIB`;
 }
+
+
+/** Rupiah ringkas untuk sumbu grafik, mis. 1500000 -> "Rp1,5 jt". */
+export function formatRupiahCompact(value: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+/** "2026-10-03" -> "3 Okt" (tanggal kalender murni, tanpa konversi zona waktu). */
+export function formatDayMonth(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "UTC" }).format(
+    new Date(Date.UTC(year!, month! - 1, day!)),
+  );
+}

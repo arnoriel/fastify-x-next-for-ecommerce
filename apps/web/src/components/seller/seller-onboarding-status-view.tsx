@@ -50,7 +50,7 @@ export function SellerOnboardingStatusView({ initial }: { initial: SellerOnboard
         <p className="text-sm text-[var(--muted)]">
           Selamat, toko <strong>{status.storeName}</strong> sudah aktif.
         </p>
-        <button type="button" className="btn mt-2" onClick={() => router.push("/seller/products/new")}>
+        <button type="button" className="btn mt-2" onClick={() => router.push("/seller/dashboard")}>
           Buka Dashboard Toko
         </button>
       </div>

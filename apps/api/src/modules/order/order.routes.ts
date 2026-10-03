@@ -155,9 +155,31 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
         );
       }
 
+      const now = new Date();
+      // Buyer menyatakan barang diterima → pengiriman otomatis dianggap delivered (timeline tidak
+      // berhenti di "Paket diambil kurir"). Webhook kurir yang telat setelah ini diabaikan (isStale).
+      const closeShipment = Boolean(order.shippingStatus) && order.shippingStatus !== "delivered";
+      if (closeShipment) {
+        await tx
+          .insert(schema.orderTrackingEvents)
+          .values({
+            orderId: order.id,
+            status: "delivered",
+            note: "Pembeli mengonfirmasi pesanan diterima",
+            occurredAt: now,
+            source: "system",
+          })
+          .onConflictDoNothing();
+      }
+
       const [updated] = await tx
         .update(schema.orders)
-        .set({ status: "completed", completedAt: new Date() })
+        .set({
+          status: "completed",
+          completedAt: now,
+          deliveredAt: order.deliveredAt ?? now,
+          ...(closeShipment ? { shippingStatus: "delivered" } : {}),
+        })
         .where(eq(schema.orders.id, id))
         .returning();
 

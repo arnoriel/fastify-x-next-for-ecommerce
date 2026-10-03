@@ -12,7 +12,7 @@ export function TrackingTimeline({ tracking }: { tracking: OrderTracking }) {
       {tracking.events.map((event, index) => (
         <li
           key={`${event.status}-${event.occurredAt}`}
-          className="relative !block !border-t-0 border-l-2 border-[var(--border)] !py-0 pb-4 pl-4 last:pb-0"
+          className="relative !block !border-t-0 border-l-2 border-[var(--border)] !py-0 !pb-4 !pl-5 last:!pb-0"
         >
           <span
             aria-hidden

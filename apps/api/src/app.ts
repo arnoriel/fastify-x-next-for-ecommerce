@@ -12,6 +12,7 @@ import { checkoutRoutes } from "./modules/checkout/checkout.routes";
 import { notificationRoutes } from "./modules/notification/notification.routes";
 import { orderRoutes } from "./modules/order/order.routes";
 import { paymentRoutes } from "./modules/payment/payment.routes";
+import { sellerDashboardRoutes } from "./modules/seller-dashboard/seller-dashboard.routes";
 import { sellerOnboardingRoutes } from "./modules/seller/seller-onboarding.routes";
 import { shippingRoutes } from "./modules/shipping/shipping.routes";
 import { authPlugin } from "./plugins/auth";
@@ -56,6 +57,7 @@ export async function buildApp() {
   await app.register(paymentRoutes);
   await app.register(sellerOnboardingRoutes);
   await app.register(shippingRoutes);
+  await app.register(sellerDashboardRoutes);
 
   app.addHook("onClose", async () => {
     await Promise.allSettled([closeDb(), closeRedis()]);

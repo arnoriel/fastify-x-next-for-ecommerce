@@ -3,18 +3,39 @@
  *
  *   POST /webhook/biteship                — callback Biteship (tanpa session; keamanan via shared secret)
  *   POST /api/seller/orders/:id/shipment  — seller mendaftarkan pengiriman ke kurir (resi dibuat)
+ *   POST /api/seller/orders/:id/ship      — seller menandai paket diserahkan ke kurir (T-09)
  *
  * Tracking untuk buyer TIDAK punya endpoint sendiri: dibawa di GET /api/orders/:id (T-06C) supaya
  * tampil di halaman detail order, bukan halaman terpisah.
  */
 
 import type { FastifyPluginAsync } from "fastify";
+import type { SellerShipmentResult } from "@ecommerce/shared";
 import { env } from "../../env";
 import { biteshipWebhookSchema, verifyWebhookSecret } from "../../lib/biteship";
 import { requireRole } from "../../plugins/auth";
 import { requireApprovedSeller } from "../seller/seller.guard";
 import { bookShipment } from "./shipment.service";
-import { applyShippingWebhook, applyWaybillUpdate } from "./shipping.service";
+import { applyShippingWebhook, applyWaybillUpdate, markShippedBySeller } from "./shipping.service";
+
+type ShipmentOrder = {
+  id: string;
+  orderNo: string;
+  status: SellerShipmentResult["orderStatus"];
+  shippingStatus: string | null;
+  trackingNumber: string | null;
+  trackingLink: string | null;
+};
+
+const serializeShipmentResult = (order: ShipmentOrder, created: boolean): SellerShipmentResult => ({
+  orderId: order.id,
+  orderNo: order.orderNo,
+  orderStatus: order.status,
+  shippingStatus: order.shippingStatus,
+  trackingNumber: order.trackingNumber,
+  trackingLink: order.trackingLink,
+  created,
+});
 
 export const shippingRoutes: FastifyPluginAsync = async (app) => {
   // ---------- POST /webhook/biteship ----------
@@ -85,14 +106,16 @@ export const shippingRoutes: FastifyPluginAsync = async (app) => {
     const { order, created } = await bookShipment({ orderId: id, sellerId: seller.id });
 
     reply.code(created ? 201 : 200);
-    return {
-      orderId: order.id,
-      orderNo: order.orderNo,
-      orderStatus: order.status,
-      shippingStatus: order.shippingStatus,
-      trackingNumber: order.trackingNumber,
-      trackingLink: order.trackingLink,
-      created,
-    };
+    return serializeShipmentResult(order, created);
+  });
+
+  // ---------- POST /api/seller/orders/:id/ship ----------
+  // Seller menandai paket sudah diserahkan ke kurir → order `shipped` + notifikasi buyer. Idempotent.
+  app.post("/api/seller/orders/:id/ship", { preHandler: requireRole(["seller"]) }, async (req) => {
+    const { id } = req.params as { id: string };
+    const seller = await requireApprovedSeller(req.user!.id);
+
+    const { order, changed } = await markShippedBySeller({ orderId: id, sellerId: seller.id });
+    return serializeShipmentResult(order, changed);
   });
 };
