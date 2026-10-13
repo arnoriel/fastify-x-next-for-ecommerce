@@ -74,9 +74,21 @@ Alur: checkout → rate real-time (area id) → bayar → seller `POST /api/sell
 
 Docker compose ada di `apps/api/docker-compose.yml`; env-nya dibaca dari `apps/api/.env` (sama dengan yang dipakai API).
 
+## Notifikasi realtime (T-09B)
+
+Bell notifikasi (badge unread + dropdown) ada di header buyer & seller: beranda, detail produk, akun/pesanan, keranjang/checkout, dan navigasi toko. Notifikasi order & status toko didorong realtime lewat **Pusher Channels** (channel private per user, otorisasi `POST /api/pusher/auth`).
+
+Tanpa kredensial Pusher aplikasi tetap jalan: bell memakai polling 30 dtk (dev saja; WAJIB diisi di production).
+
+1. https://dashboard.pusher.com → Channels → *Create app* (cluster `ap1` untuk Indonesia) → App Keys.
+2. Isi `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER` di `apps/api/.env` (keempatnya bersamaan). Web tidak butuh env baru — key/cluster publik diambil dari `GET /api/notifications/realtime`.
+3. `npm install` (menambah `pusher` di api, `pusher-js` di web), restart `npm run dev`. Tidak ada migrasi baru (tabel `notifications` sudah dari T-02).
+
+Endpoint: `GET /api/notifications` · `POST /api/notifications/:id/read` · `POST /api/notifications/read-all` · `GET /api/notifications/realtime` · `POST /api/pusher/auth`. Dari kode lain, buat notifikasi lewat `createNotification()` (`modules/notification/notification.service.ts`) — event realtime otomatis dikirim setelah transaksi induk commit.
+
 ## Env
 
-- `apps/api/.env` — `API_HOST`, `API_PORT`, `WEB_URL`, `DATABASE_URL`, `REDIS_URL` + variabel docker (`POSTGRES_*`, `REDIS_PORT`, `MEILI_*`).
+- `apps/api/.env` — `API_HOST`, `API_PORT`, `WEB_URL`, `DATABASE_URL`, `REDIS_URL` + variabel docker (`POSTGRES_*`, `REDIS_PORT`, `MEILI_*`) + `PUSHER_*` (T-09B, opsional di dev).
 - `apps/web/.env` — `NEXT_PUBLIC_API_URL`.
 - Divalidasi Zod saat startup (api: `src/env.ts`, web: `src/instrumentation.ts`) — gagal cepat dengan daftar variabel yang salah.
 - Ubah `POSTGRES_*`/`REDIS_PORT`? Sesuaikan juga `DATABASE_URL`/`REDIS_URL`, lalu `npm run infra:reset` bila user/password/db berubah (init hanya jalan pada volume kosong).

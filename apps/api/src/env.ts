@@ -57,6 +57,13 @@ const baseSchema = z.object({
   // Shared secret webhook /webhook/biteship. Isi sama persis dengan header auth yang didaftarkan
   // di dashboard Biteship > Integrations > Webhook. Kosong = webhook ditolak (503).
   BITESHIP_WEBHOOK_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(16, "minimal 16 karakter").optional()),
+  // --- Pusher Channels (T-09B) — dashboard.pusher.com > Channels app > App Keys ---
+  // Keempat variabel diisi bersamaan atau dikosongkan semua. Kosong = realtime nonaktif; bell
+  // notifikasi tetap jalan lewat polling (hanya untuk dev).
+  PUSHER_APP_ID: optionalStr,
+  PUSHER_KEY: optionalStr,
+  PUSHER_SECRET: optionalStr,
+  PUSHER_CLUSTER: optionalStr,
 });
 
 const schema = baseSchema.superRefine((v, ctx) => {
@@ -93,6 +100,22 @@ const schema = baseSchema.superRefine((v, ctx) => {
       code: "custom",
       path: ["BITESHIP_WEBHOOK_SECRET"],
       message: "BITESHIP_WEBHOOK_SECRET wajib di production agar webhook tracking Biteship bisa diverifikasi",
+    });
+  }
+  const pusherVars = [v.PUSHER_APP_ID, v.PUSHER_KEY, v.PUSHER_SECRET, v.PUSHER_CLUSTER];
+  const pusherFilled = pusherVars.filter(Boolean).length;
+  if (pusherFilled > 0 && pusherFilled < pusherVars.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["PUSHER_APP_ID"],
+      message: "PUSHER_APP_ID, PUSHER_KEY, PUSHER_SECRET, dan PUSHER_CLUSTER harus diisi bersamaan (atau kosongkan semuanya)",
+    });
+  }
+  if (v.NODE_ENV === "production" && pusherFilled === 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["PUSHER_APP_ID"],
+      message: "Pusher wajib di production agar notifikasi realtime aktif (tanpa itu bell hanya polling)",
     });
   }
   if (v.NODE_ENV === "production" && v.BETTER_AUTH_SECRET.includes("change_me")) {

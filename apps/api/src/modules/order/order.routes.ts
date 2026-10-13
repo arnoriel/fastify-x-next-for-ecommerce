@@ -194,6 +194,26 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
       payload: { orderId: result.id },
     });
 
+    // Seller ikut diberi tahu pembeli sudah menerima (best-effort: order sudah completed,
+    // kegagalan notifikasi tidak boleh membuat konfirmasi buyer terlihat gagal).
+    try {
+      const seller = await db.query.sellers.findFirst({
+        where: (s, { eq: eqq }) => eqq(s.id, result.sellerId),
+        columns: { userId: true },
+      });
+      if (seller) {
+        await createNotification({
+          userId: seller.userId,
+          type: "order_status",
+          title: "Pesanan selesai",
+          body: `Pembeli mengonfirmasi pesanan ${result.orderNo} sudah diterima.`,
+          payload: { orderId: result.id, audience: "seller", tab: "completed" },
+        });
+      }
+    } catch (err) {
+      console.warn("[order] gagal membuat notifikasi seller (konfirmasi tetap tersimpan):", err);
+    }
+
     const full = await loadOrder(req.user!.id, id);
     return serializeDetail(full!);
   });

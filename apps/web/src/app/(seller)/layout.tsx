@@ -4,10 +4,10 @@ import { requireUser } from "@/lib/session";
 
 export default async function SellerLayout({ children }: { children: ReactNode }) {
   // Guard: wajib login sebagai seller. Approval status dicek ulang di API tiap request.
-  await requireUser({ roles: ["seller"], next: "/seller/dashboard" });
+  const user = await requireUser({ roles: ["seller"], next: "/seller/dashboard" });
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <SellerNav />
+      <SellerNav userId={user.id} />
       <main>{children}</main>
     </div>
   );

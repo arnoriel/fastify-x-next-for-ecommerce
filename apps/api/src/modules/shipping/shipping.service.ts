@@ -128,7 +128,8 @@ async function transition(
         type: "order_status",
         title: "Pengiriman perlu dibuat ulang",
         body: `Pengiriman pesanan ${order.orderNo}: ${shippingStatusLabel(status)}. Buat pengiriman ulang agar pesanan sampai ke pembeli.`,
-        payload: { orderId: order.id, shippingStatus: status },
+        // `audience: "seller"` → klik di bell menuju /seller/orders, bukan /orders/:id milik buyer.
+        payload: { orderId: order.id, shippingStatus: status, audience: "seller" },
       });
     }
   }

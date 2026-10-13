@@ -2,8 +2,10 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { FaChevronLeft, FaTriangleExclamation } from "react-icons/fa6";
+import { NotificationBell } from "@/components/notification/notification-bell";
 import { ProductDetailView } from "@/components/product/product-detail-view";
 import { getProductBySlug } from "@/lib/api";
+import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +22,7 @@ export async function generateMetadata({
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const result = await getProductBySlug(slug);
+  const [result, user] = await Promise.all([getProductBySlug(slug), getSession()]);
 
   // Edge case: slug tidak ada di DB / produk soft-deleted → 404 asli (Next.js not-found).
   if ("notFound" in result && result.notFound) notFound();
@@ -43,10 +45,13 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-      <Link href="/" className="btn-ghost inline-flex w-fit items-center gap-1.5 !px-2">
-        <FaChevronLeft aria-hidden size={12} />
-        Kembali
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/" className="btn-ghost inline-flex w-fit items-center gap-1.5 !px-2">
+          <FaChevronLeft aria-hidden size={12} />
+          Kembali
+        </Link>
+        {user && <NotificationBell userId={user.id} />}
+      </div>
       <ProductDetailView product={result.product} />
     </main>
   );

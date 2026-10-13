@@ -3,6 +3,7 @@ import type { ProductSort } from "@ecommerce/shared";
 import { CategoryBento } from "@/components/home/category-bento";
 import { ProductGrid } from "@/components/home/product-grid";
 import { SearchFilterBar } from "@/components/home/search-filter-bar";
+import { NotificationBell } from "@/components/notification/notification-bell";
 import { getCategories, getProducts } from "@/lib/api";
 import { getSession } from "@/lib/session";
 
@@ -49,7 +50,8 @@ export default async function HomePage({
           <h1 className="text-xl font-extrabold tracking-tight text-[var(--fg)] sm:text-2xl">Ecommerce</h1>
           <p className="muted small">Marketplace multi-vendor</p>
         </div>
-        <nav className="nav !mt-0 shrink-0">
+        <nav className="nav !mt-0 shrink-0 items-center">
+          {user && <NotificationBell userId={user.id} />}
           <Link href="/cart" className="btn-ghost">
             Keranjang
           </Link>

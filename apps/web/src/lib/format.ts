@@ -42,3 +42,20 @@ export function formatDayMonth(isoDate: string): string {
     new Date(Date.UTC(year!, month! - 1, day!)),
   );
 }
+
+const RELATIVE_UNITS: readonly { unit: Intl.RelativeTimeFormatUnit; seconds: number }[] = [
+  { unit: "day", seconds: 86_400 },
+  { unit: "hour", seconds: 3_600 },
+  { unit: "minute", seconds: 60 },
+];
+
+/** ISO datetime -> "5 menit yang lalu" / "Baru saja"; lebih dari 7 hari jatuh ke tanggal lengkap. */
+export function formatRelativeTime(iso: string, now: number = Date.now()): string {
+  const diffSec = Math.round((new Date(iso).getTime() - now) / 1000);
+  const ageSec = Math.max(0, -diffSec); // jam device maju dari server → jangan tampil "dalam 2 menit"
+  if (ageSec < 60) return "Baru saja";
+  if (ageSec > 7 * 86_400) return formatDateTime(iso);
+  const rtf = new Intl.RelativeTimeFormat("id-ID", { numeric: "auto" });
+  const { unit, seconds } = RELATIVE_UNITS.find((u) => ageSec >= u.seconds)!;
+  return rtf.format(-Math.floor(ageSec / seconds), unit);
+}

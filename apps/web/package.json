@@ -13,6 +13,7 @@
     "@hookform/resolvers": "^3.9.1",
     "better-auth": "^1.7.5",
     "next": "^16.3.5",
+    "pusher-js": "^8.6.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hook-form": "^7.54.2",

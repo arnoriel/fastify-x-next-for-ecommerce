@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { NotificationBell } from "@/components/notification/notification-bell";
 
 const LINKS = [
   { href: "/seller/dashboard", label: "Dashboard" },
@@ -9,7 +10,7 @@ const LINKS = [
   { href: "/seller/products/new", label: "Tambah Produk" },
 ] as const;
 
-export function SellerNav() {
+export function SellerNav({ userId }: { userId: string }) {
   const pathname = usePathname();
 
   return (
@@ -30,6 +31,7 @@ export function SellerNav() {
       <Link href="/" className="tab ml-auto">
         Ke toko
       </Link>
+      <NotificationBell userId={userId} />
     </nav>
   );
 }
