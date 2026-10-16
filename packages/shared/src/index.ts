@@ -8,3 +8,5 @@ export * from "./order";
 export * from "./notification";
 export * from "./seller";
 export * from "./seller-dashboard";
+export * from "./dispute";
+export * from "./admin";

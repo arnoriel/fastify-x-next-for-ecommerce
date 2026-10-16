@@ -8,4 +8,5 @@ export * from "./carts";
 export * from "./vouchers";
 export * from "./orders";
 export * from "./engagement";
+export * from "./disputes";
 export * from "./relations";

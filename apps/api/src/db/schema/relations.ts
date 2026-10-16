@@ -3,6 +3,7 @@ import { addresses } from "./addresses";
 import { accounts, sessions } from "./auth";
 import { carts, cartItems } from "./carts";
 import { categories, productVariants, products } from "./catalog";
+import { disputeMessages, disputes } from "./disputes";
 import { conversations, messages, notifications, payouts, reviews, wishlists } from "./engagement";
 import { checkouts, orderItems, orderTrackingEvents, orders, voucherUsages } from "./orders";
 import { sellers } from "./sellers";
@@ -77,6 +78,7 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   seller: one(sellers, { fields: [orders.sellerId], references: [sellers.id] }),
   items: many(orderItems),
   trackingEvents: many(orderTrackingEvents),
+  disputes: many(disputes),
 }));
 
 export const orderTrackingEventsRelations = relations(orderTrackingEvents, ({ one }) => ({
@@ -133,4 +135,16 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
   user: one(users, { fields: [accounts.userId], references: [users.id] }),
+}));
+
+export const disputesRelations = relations(disputes, ({ one, many }) => ({
+  order: one(orders, { fields: [disputes.orderId], references: [orders.id] }),
+  reporter: one(users, { fields: [disputes.reporterId], references: [users.id], relationName: "dispute_reporter" }),
+  resolver: one(users, { fields: [disputes.resolvedBy], references: [users.id], relationName: "dispute_resolver" }),
+  messages: many(disputeMessages),
+}));
+
+export const disputeMessagesRelations = relations(disputeMessages, ({ one }) => ({
+  dispute: one(disputes, { fields: [disputeMessages.disputeId], references: [disputes.id] }),
+  author: one(users, { fields: [disputeMessages.authorId], references: [users.id] }),
 }));

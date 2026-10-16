@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   presignUploadRequestSchema,
   rejectSellerSchema,
@@ -75,6 +75,8 @@ export const sellerOnboardingRoutes: FastifyPluginAsync = async (app) => {
       pickupPostalCode: input.pickupPostalCode,
       pickupStreet: input.pickupStreet,
       pickupBiteshipAreaId,
+      // Dokumen verifikasi disimpan agar admin bisa memeriksanya saat approval (T-10).
+      documentUrl: input.documentUrl ?? null,
     };
 
     const seller = existing
@@ -115,7 +117,11 @@ export const sellerOnboardingRoutes: FastifyPluginAsync = async (app) => {
 
       // Role user di-upgrade jadi seller di sini — dibaca ulang tiap request oleh
       // `resolveSession` (plugins/auth.ts), jadi akses dashboard aktif tanpa perlu re-login.
-      await tx.update(schema.users).set({ role: "seller" }).where(eq(schema.users.id, existingSeller.userId));
+      // Hanya buyer yang di-upgrade: akun admin tidak boleh turun peran karena pernah mengajukan toko.
+      await tx
+        .update(schema.users)
+        .set({ role: "seller" })
+        .where(and(eq(schema.users.id, existingSeller.userId), eq(schema.users.role, "buyer")));
 
       return updatedSeller!;
     });
@@ -161,28 +167,5 @@ export const sellerOnboardingRoutes: FastifyPluginAsync = async (app) => {
     });
 
     return serializeStatus(seller);
-  });
-
-  // ---------- Admin: daftar toko pending (dipakai T-10, disediakan di sini karena erat) ----------
-
-  app.get("/api/admin/sellers", { preHandler: requireRole(["admin"]) }, async (req) => {
-    const query = req.query as { status?: string };
-    const rows = await db.query.sellers.findMany({
-      where: query.status
-        ? (s, { eq: eqq }) => eqq(s.status, query.status as "pending" | "approved" | "rejected" | "suspended")
-        : undefined,
-      orderBy: (s, { desc }) => desc(s.createdAt),
-      with: { user: { columns: { id: true, name: true, email: true } } },
-    });
-    return {
-      items: rows.map((s) => ({
-        id: s.id,
-        storeName: s.storeName,
-        status: s.status,
-        rejectionReason: s.rejectionReason,
-        owner: { id: s.user!.id, name: s.user!.name, email: s.user!.email },
-        submittedAt: s.createdAt.toISOString(),
-      })),
-    };
   });
 };

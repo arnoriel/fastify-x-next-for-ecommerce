@@ -25,6 +25,14 @@ export default async function AccountPage() {
       <Link href="/orders" className="btn">
         Riwayat pesanan
       </Link>
+      <Link href="/disputes" className="btn">
+        Laporan &amp; sengketa
+      </Link>
+      {user.role === "admin" && (
+        <Link href="/admin" className="btn">
+          Panel admin
+        </Link>
+      )}
       {user.role === "seller" && (
         <Link href="/seller/dashboard" className="btn">
           Dashboard toko

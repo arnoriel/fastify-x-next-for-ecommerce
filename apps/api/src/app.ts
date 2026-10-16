@@ -4,11 +4,13 @@ import { env } from "./env";
 import { closeDb } from "./lib/db";
 import { attachRedisLogging, closeRedis } from "./lib/redis";
 import { addressRoutes } from "./modules/address/address.routes";
+import { adminRoutes } from "./modules/admin/admin.routes";
 import { authRoutes } from "./modules/auth/routes";
 import { cartRoutes } from "./modules/cart/cart.routes";
 import { categoryRoutes } from "./modules/catalog/category.routes";
 import { productRoutes } from "./modules/catalog/product.routes";
 import { checkoutRoutes } from "./modules/checkout/checkout.routes";
+import { disputeRoutes } from "./modules/dispute/dispute.routes";
 import { notificationRoutes } from "./modules/notification/notification.routes";
 import { orderRoutes } from "./modules/order/order.routes";
 import { paymentRoutes } from "./modules/payment/payment.routes";
@@ -58,6 +60,8 @@ export async function buildApp() {
   await app.register(sellerOnboardingRoutes);
   await app.register(shippingRoutes);
   await app.register(sellerDashboardRoutes);
+  await app.register(disputeRoutes);
+  await app.register(adminRoutes);
 
   app.addHook("onClose", async () => {
     await Promise.allSettled([closeDb(), closeRedis()]);

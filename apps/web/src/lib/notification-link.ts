@@ -24,6 +24,15 @@ export function resolveNotificationHref(n: Pick<NotificationView, "type" | "payl
       return checkoutId ? `/checkout/${encodeURIComponent(checkoutId)}` : "/orders";
     }
 
+    case "dispute_update": {
+      const disputeId = asString(n.payload.disputeId);
+      if (!disputeId) return "/disputes";
+      // Notifikasi untuk admin membuka antrian admin; peserta membuka tiketnya sendiri.
+      return n.payload.audience === "admin"
+        ? `/admin/disputes/${encodeURIComponent(disputeId)}`
+        : `/disputes/${encodeURIComponent(disputeId)}`;
+    }
+
     // Halaman chat dibuat di T-11 (payload: { conversationId }); sampai itu ada tidak ada tujuan.
     case "chat_message":
       return null;

@@ -16,7 +16,14 @@ export const sellerOnboardingSchema = z.object({
   pickupDistrict: z.string().trim().min(2).max(100),
   pickupPostalCode: z.string().trim().regex(/^\d{5}$/, "Kode pos harus 5 digit"),
   pickupStreet: z.string().trim().min(5).max(300),
-  documentUrl: z.string().trim().url().nullable().optional(),
+  // Hanya http(s): admin membuka link ini dari panel approval — tolak skema berbahaya (javascript:, data:).
+  documentUrl: z
+    .string()
+    .trim()
+    .url()
+    .regex(/^https?:\/\//i, "Tautan dokumen harus diawali http:// atau https://")
+    .nullable()
+    .optional(),
 });
 export type SellerOnboardingInput = z.infer<typeof sellerOnboardingSchema>;
 

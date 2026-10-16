@@ -13,9 +13,9 @@ const TOOLTIP_STYLE = {
 } as const;
 
 /** Grafik omzet harian (zero-filled dari API). Dimuat lazy & client-only oleh dashboard-view. */
-export function SalesChart({ series }: { series: SalesPoint[] }) {
+export function SalesChart({ series, valueLabel = "Omzet" }: { series: SalesPoint[]; valueLabel?: string }) {
   return (
-    <div className="h-64 w-full" role="img" aria-label="Grafik omzet harian">
+    <div className="h-64 w-full" role="img" aria-label={`Grafik ${valueLabel.toLowerCase()} harian`}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <defs>
@@ -47,7 +47,7 @@ export function SalesChart({ series }: { series: SalesPoint[] }) {
               const orders = (payload?.[0]?.payload as SalesPoint | undefined)?.orders ?? 0;
               return `${formatDayMonth(String(label))} · ${orders} pesanan`;
             }}
-            formatter={(value) => [formatRupiah(Number(value)), "Omzet"]}
+            formatter={(value) => [formatRupiah(Number(value)), valueLabel]}
           />
           <Area
             type="monotone"

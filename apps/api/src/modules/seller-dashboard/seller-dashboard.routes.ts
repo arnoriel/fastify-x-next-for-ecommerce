@@ -21,6 +21,6 @@ export const sellerDashboardRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/api/seller/orders", { preHandler: requireRole(["seller"]) }, async (req) => {
     const seller = await requireApprovedSeller(req.user!.id);
-    return listSellerOrders(seller.id, sellerOrdersQuerySchema.parse(req.query));
+    return listSellerOrders(seller.id, seller.userId, sellerOrdersQuerySchema.parse(req.query));
   });
 };

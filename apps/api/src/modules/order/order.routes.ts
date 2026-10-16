@@ -3,12 +3,14 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import {
   CONFIRMABLE_ORDER_STATUSES,
   listOrdersQuerySchema,
+  type OrderDisputeInfo,
   orderDetailSchema,
   orderListResponseSchema,
 } from "@ecommerce/shared";
 import { db, schema } from "../../db";
 import { httpError } from "../../lib/http-error";
 import { requireAuth } from "../../plugins/auth";
+import { hasActiveDispute, loadOrderDisputeInfos } from "../dispute/dispute.service";
 import { createNotification } from "../notification/notification.service";
 import { buildTracking, syncTrackingIfStale } from "../shipping/shipping.service";
 
@@ -66,9 +68,12 @@ function serializeSummary(order: OrderSummarySource) {
   };
 }
 
-function serializeDetail(order: OrderRow) {
+function serializeDetail(order: OrderRow, dispute: OrderDisputeInfo) {
   return orderDetailSchema.parse({
     ...serializeSummary(order),
+    // Laporan aktif menahan konfirmasi: buyer menyelesaikan/membatalkan laporan dulu (dana tidak dilepas sepihak).
+    canConfirmReceived: canConfirm(order.status) && !dispute.activeId,
+    dispute,
     items: order.items.map((i) => ({
       id: i.id,
       productId: i.productId,
@@ -130,7 +135,8 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
     // Best-effort & throttled — buyer cukup membuka halaman ini, tanpa aksi manual.
     if (await syncTrackingIfStale(order)) order = (await loadOrder(req.user!.id, id)) ?? order;
 
-    return serializeDetail(order);
+    const dispute = (await loadOrderDisputeInfos([order], "buyer", order.seller!.userId)).get(order.id)!;
+    return serializeDetail(order, dispute);
   });
 
   // ---------- Konfirmasi terima barang (buyer) → status completed, buka akses review ----------
@@ -152,6 +158,13 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
           400,
           "ORDER_NOT_CONFIRMABLE",
           "Pesanan ini tidak bisa dikonfirmasi pada status saat ini.",
+        );
+      }
+      if (await hasActiveDispute(order.id)) {
+        throw httpError(
+          409,
+          "DISPUTE_ACTIVE",
+          "Ada laporan aktif untuk pesanan ini. Selesaikan atau batalkan laporan terlebih dahulu.",
         );
       }
 
@@ -214,7 +227,8 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
       console.warn("[order] gagal membuat notifikasi seller (konfirmasi tetap tersimpan):", err);
     }
 
-    const full = await loadOrder(req.user!.id, id);
-    return serializeDetail(full!);
+    const full = (await loadOrder(req.user!.id, id))!;
+    const dispute = (await loadOrderDisputeInfos([full], "buyer", full.seller!.userId)).get(full.id)!;
+    return serializeDetail(full, dispute);
   });
 };

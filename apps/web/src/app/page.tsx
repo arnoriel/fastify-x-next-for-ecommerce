@@ -52,6 +52,11 @@ export default async function HomePage({
         </div>
         <nav className="nav !mt-0 shrink-0 items-center">
           {user && <NotificationBell userId={user.id} />}
+          {user?.role === "admin" && (
+            <Link href="/admin" className="btn-ghost">
+              Admin
+            </Link>
+          )}
           <Link href="/cart" className="btn-ghost">
             Keranjang
           </Link>

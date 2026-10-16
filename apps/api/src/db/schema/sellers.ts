@@ -18,6 +18,8 @@ export const sellers = pgTable(
     bannerUrl: text("banner_url"),
     status: sellerStatus("status").notNull().default("pending"),
     rejectionReason: text("rejection_reason"),
+    // Dokumen verifikasi (KTP/NPWP) dari onboarding T-03B — dilihat admin saat approval (T-10).
+    documentUrl: text("document_url"),
     // Alamat pickup (Biteship origin) — T-08.
     pickupContactName: text("pickup_contact_name"),
     pickupPhone: text("pickup_phone"),

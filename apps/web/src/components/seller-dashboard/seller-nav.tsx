@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/seller/dashboard", label: "Dashboard" },
   { href: "/seller/orders", label: "Pesanan" },
   { href: "/seller/products/new", label: "Tambah Produk" },
+  { href: "/disputes", label: "Sengketa" },
 ] as const;
 
 export function SellerNav({ userId }: { userId: string }) {

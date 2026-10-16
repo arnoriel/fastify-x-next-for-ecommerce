@@ -13,6 +13,7 @@ import {
   SELLER_ORDER_TAB_LABELS,
   type SellerDashboardSummary,
 } from "@ecommerce/shared";
+import { StatCard } from "@/components/ui/stat-card";
 import { formatRupiah } from "@/lib/format";
 import { getSellerDashboard } from "@/lib/seller-order-api";
 import { useApiErrorMessage } from "@/lib/use-api-error";
@@ -26,16 +27,6 @@ const SalesChart = dynamic(() => import("./sales-chart").then((m) => m.SalesChar
   ssr: false,
   loading: () => <div className="clay-inset h-64 w-full animate-pulse" aria-hidden />,
 });
-
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="bento-cell flex flex-col gap-1 p-4">
-      <span className="muted small">{label}</span>
-      <span className="text-xl font-extrabold tracking-tight text-[var(--fg)]">{value}</span>
-      {hint && <span className="muted small">{hint}</span>}
-    </div>
-  );
-}
 
 export function DashboardView() {
   const toMessage = useApiErrorMessage();

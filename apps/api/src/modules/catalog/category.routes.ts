@@ -6,7 +6,7 @@ import { httpError } from "../../lib/http-error";
 import { uniqueSlug } from "../../lib/slug";
 import { requireRole } from "../../plugins/auth";
 
-function serializeCategory(row: typeof schema.categories.$inferSelect): Category {
+export function serializeCategory(row: typeof schema.categories.$inferSelect): Category {
   return {
     id: row.id,
     parentId: row.parentId,

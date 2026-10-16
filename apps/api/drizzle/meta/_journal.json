@@ -29,6 +29,13 @@
       "when": 1791005100000,
       "tag": "0003_biteship_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791990000000,
+      "tag": "0004_admin_panel",
+      "breakpoints": true
     }
   ]
 }

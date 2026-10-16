@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type OrderStatusValue, orderStatusSchema } from "./cart";
+import { orderDisputeInfoSchema } from "./dispute";
 
 // ---------- Tab manajemen order seller (T-09) ----------
 
@@ -87,6 +88,8 @@ export const sellerOrderSchema = z.object({
   canCreateShipment: z.boolean(),
   // Pengiriman sudah terdaftar & belum diserahkan ke kurir.
   canMarkShipped: z.boolean(),
+  // T-10: tombol "Laporkan masalah" / "Lihat laporan" di kartu order seller.
+  dispute: orderDisputeInfoSchema,
   createdAt: z.iso.datetime(),
   shippedAt: z.iso.datetime().nullable(),
   completedAt: z.iso.datetime().nullable(),

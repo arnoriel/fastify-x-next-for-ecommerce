@@ -10,6 +10,7 @@ import {
   SALES_COUNTED_STATUSES,
   SELLER_ORDER_TAB_STATUSES,
   type SellerDashboardSummary,
+  type OrderDisputeInfo,
   type SellerOrderCounts,
   type SellerOrderListResponse,
   type SellerOrdersQuery,
@@ -18,22 +19,12 @@ import {
   shippingStatusLabel,
 } from "@ecommerce/shared";
 import { db, schema } from "../../db";
+import { lastDays, rangeStart } from "../../lib/jakarta-range";
+import { escapeLike } from "../../lib/sql";
+import { loadOrderDisputeInfos } from "../dispute/dispute.service";
 import { FAILED_BOOKING_STATUSES } from "../shipping/shipping.service";
 
-const JAKARTA_TZ = "Asia/Jakarta";
-const JAKARTA_OFFSET = "+07:00"; // WIB tidak punya DST
-const DAY_MS = 86_400_000;
 const COUNTED = [...SALES_COUNTED_STATUSES];
-
-// ---------- Tanggal (WIB) ----------
-
-/** "YYYY-MM-DD" untuk waktu `date` di Asia/Jakarta. */
-const jakartaDate = (date: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: JAKARTA_TZ }).format(date);
-
-/** Daftar `days` tanggal berurutan berakhir di hari ini (WIB), mis. 7 hari terakhir termasuk hari ini. */
-function lastDays(days: number, now = new Date()): string[] {
-  return Array.from({ length: days }, (_, i) => jakartaDate(new Date(now.getTime() - (days - 1 - i) * DAY_MS)));
-}
 
 // ---------- Hitung per tab ----------
 
@@ -60,7 +51,7 @@ export async function getDashboardSummary(sellerId: string, range: DashboardRang
   const dates = lastDays(DASHBOARD_RANGE_DAYS[range]);
   const from = dates[0]!;
   const to = dates[dates.length - 1]!;
-  const since = new Date(`${from}T00:00:00${JAKARTA_OFFSET}`);
+  const since = rangeStart(from);
 
   const inRange = and(
     eq(schema.orders.sellerId, sellerId),
@@ -128,10 +119,7 @@ export async function getDashboardSummary(sellerId: string, range: DashboardRang
 
 type OrderWithItems = typeof schema.orders.$inferSelect & { items: (typeof schema.orderItems.$inferSelect)[] };
 
-/** Escape wildcard LIKE supaya input user dicari literal. */
-const escapeLike = (value: string) => value.replace(/[\\%_]/g, (c) => `\\${c}`);
-
-function serializeSellerOrder(order: OrderWithItems) {
+function serializeSellerOrder(order: OrderWithItems, dispute: OrderDisputeInfo) {
   const bookingActive = Boolean(order.biteshipOrderId) && !FAILED_BOOKING_STATUSES.has(order.shippingStatus ?? "");
   const a = order.shippingAddress;
 
@@ -164,13 +152,18 @@ function serializeSellerOrder(order: OrderWithItems) {
     })),
     canCreateShipment: order.status === "paid" || (order.status === "processing" && !bookingActive),
     canMarkShipped: order.status === "processing" && bookingActive,
+    dispute,
     createdAt: order.createdAt.toISOString(),
     shippedAt: order.shippedAt ? order.shippedAt.toISOString() : null,
     completedAt: order.completedAt ? order.completedAt.toISOString() : null,
   };
 }
 
-export async function listSellerOrders(sellerId: string, query: SellerOrdersQuery): Promise<SellerOrderListResponse> {
+export async function listSellerOrders(
+  sellerId: string,
+  sellerUserId: string,
+  query: SellerOrdersQuery,
+): Promise<SellerOrderListResponse> {
   const statuses = [...SELLER_ORDER_TAB_STATUSES[query.tab]];
   const search = query.q ? `%${escapeLike(query.q)}%` : null;
 
@@ -198,8 +191,11 @@ export async function listSellerOrders(sellerId: string, query: SellerOrdersQuer
     }),
   ]);
 
+  // Tombol "Laporkan masalah" / "Lihat laporan" per kartu — 1 query untuk seluruh halaman.
+  const disputes = await loadOrderDisputeInfos(rows, "seller", sellerUserId);
+
   return sellerOrderListResponseSchema.parse({
-    items: rows.map(serializeSellerOrder),
+    items: rows.map((o) => serializeSellerOrder(o, disputes.get(o.id)!)),
     page: query.page,
     pageSize: query.pageSize,
     total: totalRows[0]?.count ?? 0,

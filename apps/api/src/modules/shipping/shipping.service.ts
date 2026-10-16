@@ -15,7 +15,7 @@ import { type OrderTracking, orderTrackingSchema, shippingStatusLabel } from "@e
 import { db, schema } from "../../db";
 import { httpError } from "../../lib/http-error";
 import { shipmentGateway, type TrackedShipment } from "../../lib/shipping";
-import { createNotification } from "../notification/notification.service";
+import { notifySafely } from "../notification/notification.service";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type OrderRow = typeof schema.orders.$inferSelect;
@@ -46,14 +46,9 @@ const SYNC_INTERVAL_MS = 3 * 60 * 1000;
 
 // ---------- Notifikasi ----------
 
-/** Gagal membuat notifikasi (savepoint) TIDAK boleh membatalkan perubahan status pengiriman. */
-export async function notifySafely(tx: Tx, params: Parameters<typeof createNotification>[0]) {
-  try {
-    await tx.transaction((sp) => createNotification(params, sp));
-  } catch (err) {
-    console.warn("[shipping] gagal membuat notifikasi — perubahan status tetap disimpan:", err);
-  }
-}
+// Gagal membuat notifikasi (savepoint) TIDAK boleh membatalkan perubahan status pengiriman.
+// Implementasi dipindah ke notification.service (dipakai juga modul sengketa); re-export agar import lama tetap jalan.
+export { notifySafely };
 
 // ---------- View untuk buyer ----------
 

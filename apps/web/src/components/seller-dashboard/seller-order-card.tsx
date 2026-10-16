@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { SELLER_STATUS_LABELS, type SellerOrder } from "@ecommerce/shared";
 import { formatDateTime, formatRupiah } from "@/lib/format";
 
@@ -102,6 +103,17 @@ export function SellerOrderCard({ order, busyAction, disabled, onAction }: Props
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {order.dispute.activeId ? (
+            <Link href={`/disputes/${order.dispute.activeId}`} className="btn-ghost">
+              Lihat laporan
+            </Link>
+          ) : (
+            order.dispute.canOpen && (
+              <Link href={`/disputes/new?orderId=${encodeURIComponent(order.id)}`} className="btn-ghost">
+                Laporkan masalah
+              </Link>
+            )
+          )}
           {order.canCreateShipment && (
             <button
               type="button"

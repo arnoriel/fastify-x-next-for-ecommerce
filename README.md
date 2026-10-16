@@ -86,6 +86,23 @@ Tanpa kredensial Pusher aplikasi tetap jalan: bell memakai polling 30 dtk (dev s
 
 Endpoint: `GET /api/notifications` · `POST /api/notifications/:id/read` · `POST /api/notifications/read-all` · `GET /api/notifications/realtime` · `POST /api/pusher/auth`. Dari kode lain, buat notifikasi lewat `createNotification()` (`modules/notification/notification.service.ts`) — event realtime otomatis dikirim setelah transaksi induk commit.
 
+## Panel admin & sengketa (T-10)
+
+Login sebagai admin (`admin@ecommerce.test`, lihat seed) → tombol **Panel admin** di halaman akun, atau langsung `/admin`.
+
+| Halaman | Fungsi |
+|---|---|
+| `/admin` | Analytics platform: GMV, pesanan, pengguna & pendaftar toko baru, toko/kategori terlaris, status pesanan, ringkasan sengketa (7/30/90 hari) |
+| `/admin/sellers` | Approval seller: tab Menunggu/Disetujui/Ditolak, cari, lihat dokumen, setujui / tolak dengan alasan |
+| `/admin/categories` | CRUD kategori bertingkat + atribut produk, aktif/nonaktif, hapus (diblokir bila masih ada produk/sub-kategori) |
+| `/admin/orders` | Monitoring transaksi (filter status, cari nomor pesanan/pembeli/toko), penanda pesanan bersengketa |
+| `/admin/disputes` | Antrian tiket sengketa (Aktif / Perlu dibalas / Selesai), balas, putuskan |
+| `/disputes`, `/disputes/new?orderId=`, `/disputes/:id` | Sisi buyer & seller: ajukan laporan dari detail pesanan / kartu order seller, balas, batalkan |
+
+Aturan sengketa: satu tiket aktif per order (dijaga unique index DB), hanya buyer/seller order itu yang bisa melapor (order `paid`–`completed`; `completed` maksimal 14 hari), maks 5 tiket/24 jam per user, tiket yang sudah diputuskan admin tidak bisa dibuka ulang untuk order yang sama (dibatalkan pelapor boleh), dan **konfirmasi terima barang ditahan selama ada tiket aktif**. Keputusan admin hanya dicatat dan diberitahukan ke kedua pihak — eksekusi refund menyusul di task retur/refund.
+
+Setelah `git pull`/ganti project: `npm run db:migrate` (migrasi `0004_admin_panel`: tabel `disputes`, `dispute_messages`, kolom `sellers.document_url`, nilai notifikasi `dispute_update`). Tidak ada env baru.
+
 ## Env
 
 - `apps/api/.env` — `API_HOST`, `API_PORT`, `WEB_URL`, `DATABASE_URL`, `REDIS_URL` + variabel docker (`POSTGRES_*`, `REDIS_PORT`, `MEILI_*`) + `PUSHER_*` (T-09B, opsional di dev).

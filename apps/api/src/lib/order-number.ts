@@ -23,3 +23,7 @@ export function generateInvoiceNo(): string {
 export function generateOrderNo(): string {
   return `ORD-${datePart()}-${randomSuffix()}`;
 }
+
+export function generateDisputeTicketNo(): string {
+  return `DSP-${datePart()}-${randomSuffix(5)}`;
+}

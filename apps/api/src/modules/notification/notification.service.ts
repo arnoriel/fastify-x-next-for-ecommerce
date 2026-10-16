@@ -82,3 +82,15 @@ export async function createNotification(
   }
   return view;
 }
+
+/**
+ * Buat notifikasi di dalam transaksi `tx` lewat savepoint: bila gagal, HANYA notifikasinya yang
+ * batal — perubahan utama di transaksi (status order, tiket, dll) tetap tersimpan.
+ */
+export async function notifySafely(tx: Tx, params: Parameters<typeof createNotification>[0]) {
+  try {
+    await tx.transaction((sp) => createNotification(params, sp));
+  } catch (err) {
+    console.warn("[notification] gagal membuat notifikasi — perubahan utama tetap disimpan:", err);
+  }
+}

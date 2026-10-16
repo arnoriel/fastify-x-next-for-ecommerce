@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { FaCircleCheck, FaTriangleExclamation } from "react-icons/fa6";
 import type { OrderDetail, OrderStatusValue } from "@ecommerce/shared";
@@ -158,10 +159,31 @@ export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
         </li>
       </ul>
 
+      {order.dispute.activeId && (
+        <section className="glass flex flex-wrap items-center justify-between gap-3 p-4">
+          <div className="flex flex-col">
+            <span className="font-semibold text-[var(--fg)]">Ada laporan aktif untuk pesanan ini</span>
+            <span className="muted small">Konfirmasi terima barang ditahan sampai laporan selesai atau dibatalkan.</span>
+          </div>
+          <Link href={`/disputes/${order.dispute.activeId}`} className="btn-ghost">
+            Lihat laporan
+          </Link>
+        </section>
+      )}
+
       {order.canConfirmReceived && !confirmed && (
         <button type="button" className="btn" disabled={confirming} onClick={() => void handleConfirm()}>
           {confirming ? "Memproses..." : "Konfirmasi Terima Barang"}
         </button>
+      )}
+
+      {order.dispute.canOpen && (
+        <Link href={`/disputes/new?orderId=${encodeURIComponent(order.id)}`} className="btn-ghost text-center">
+          Laporkan masalah
+        </Link>
+      )}
+      {!order.dispute.canOpen && !order.dispute.activeId && order.dispute.blockedReason && ["paid", "processing", "shipped", "delivered", "completed"].includes(order.status) && (
+        <p className="muted small text-center">{order.dispute.blockedReason}</p>
       )}
 
       {(order.canReview || confirmed) && (
