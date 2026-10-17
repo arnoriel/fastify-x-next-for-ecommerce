@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ProductSort } from "@ecommerce/shared";
+import { ChatNavLink } from "@/components/chat/chat-nav-link";
 import { CategoryBento } from "@/components/home/category-bento";
 import { ProductGrid } from "@/components/home/product-grid";
 import { SearchFilterBar } from "@/components/home/search-filter-bar";
@@ -51,6 +52,7 @@ export default async function HomePage({
           <p className="muted small">Marketplace multi-vendor</p>
         </div>
         <nav className="nav !mt-0 shrink-0 items-center">
+          {user && <ChatNavLink />}
           {user && <NotificationBell userId={user.id} />}
           {user?.role === "admin" && (
             <Link href="/admin" className="btn-ghost">

@@ -1,17 +1,25 @@
 "use client";
 
 import type Pusher from "pusher-js";
-import { NOTIFICATION_EVENT, notificationSchema, type NotificationView, userChannelName } from "@ecommerce/shared";
+import {
+  CHAT_MESSAGE_EVENT,
+  CHAT_READ_EVENT,
+  type ChatMessage,
+  type ChatReadEvent,
+  NOTIFICATION_EVENT,
+  chatMessageSchema,
+  chatReadEventSchema,
+  conversationChannelName,
+  notificationSchema,
+  type NotificationView,
+  userChannelName,
+} from "@ecommerce/shared";
 import { apiRequest } from "@/lib/http";
 
 type PusherConfig = { key: string; cluster: string };
 
-type Handlers = {
+type Handlers = ChannelHandlers & {
   onNotification: (notification: NotificationView) => void;
-  /** true = terhubung DAN channel ter-subscribe; false = putus/ditolak (UI kembali ke polling). */
-  onLiveChange: (live: boolean) => void;
-  /** Channel (re)subscribed → resync daftar supaya event yang terlewat saat koneksi putus tidak hilang. */
-  onSubscribed: () => void;
 };
 
 /** Tunda disconnect: React StrictMode / pindah route group me-remount bell, jangan buka-tutup koneksi. */
@@ -67,14 +75,23 @@ function scheduleIdleDisconnect() {
   }, IDLE_DISCONNECT_MS);
 }
 
+type ChannelHandlers = {
+  /** true = terhubung DAN channel ter-subscribe; false = putus/ditolak (UI kembali ke polling). */
+  onLiveChange: (live: boolean) => void;
+  /** Channel (re)subscribed → resync supaya event yang terlewat saat koneksi putus tidak hilang. */
+  onSubscribed: () => void;
+};
+
 /**
- * Dengarkan notifikasi baru user di channel private-nya. Mengembalikan fungsi pembersih.
- * Melempar bila library gagal dimuat — caller cukup jatuh ke polling.
+ * Subscribe ke 1 channel private + bind event. Koneksi WebSocket dibagi; channel yang sama dipakai
+ * bersama (refcount). Mengembalikan fungsi pembersih. Melempar bila library gagal dimuat —
+ * caller cukup jatuh ke polling.
  */
-export async function connectUserNotifications(
-  userId: string,
+async function connectChannel(
+  channelName: string,
   config: PusherConfig,
-  handlers: Handlers,
+  events: Record<string, (data: unknown) => void>,
+  handlers: ChannelHandlers,
 ): Promise<() => void> {
   clearTimeout(idleTimer);
   subscribers += 1;
@@ -88,18 +105,12 @@ export async function connectUserNotifications(
     throw err;
   }
 
-  const channelName = userChannelName(userId);
   const channel = pusher.subscribe(channelName);
   channelRefs.set(channelName, (channelRefs.get(channelName) ?? 0) + 1);
 
   let subscribed = channel.subscribed;
   const emitLive = () => handlers.onLiveChange(subscribed && pusher.connection.state === "connected");
 
-  const onEvent = (data: unknown) => {
-    // Payload dari luar batas kepercayaan: validasi sebelum menyentuh state UI.
-    const parsed = notificationSchema.safeParse(data);
-    if (parsed.success) handlers.onNotification(parsed.data);
-  };
   const onSubscribed = () => {
     subscribed = true;
     emitLive();
@@ -114,14 +125,14 @@ export async function connectUserNotifications(
     emitLive();
   };
 
-  channel.bind(NOTIFICATION_EVENT, onEvent);
+  for (const [event, callback] of Object.entries(events)) channel.bind(event, callback);
   channel.bind("pusher:subscription_succeeded", onSubscribed);
   channel.bind("pusher:subscription_error", onSubscriptionError);
   pusher.connection.bind("state_change", onConnectionState);
   emitLive();
 
   return () => {
-    channel.unbind(NOTIFICATION_EVENT, onEvent);
+    for (const [event, callback] of Object.entries(events)) channel.unbind(event, callback);
     channel.unbind("pusher:subscription_succeeded", onSubscribed);
     channel.unbind("pusher:subscription_error", onSubscriptionError);
     pusher.connection.unbind("state_change", onConnectionState);
@@ -136,4 +147,48 @@ export async function connectUserNotifications(
     subscribers -= 1;
     if (subscribers === 0) scheduleIdleDisconnect();
   };
+}
+
+/** Dengarkan notifikasi baru user di channel private-nya (T-09B). */
+export function connectUserNotifications(userId: string, config: PusherConfig, handlers: Handlers): Promise<() => void> {
+  return connectChannel(
+    userChannelName(userId),
+    config,
+    {
+      [NOTIFICATION_EVENT]: (data) => {
+        // Payload dari luar batas kepercayaan: validasi sebelum menyentuh state UI.
+        const parsed = notificationSchema.safeParse(data);
+        if (parsed.success) handlers.onNotification(parsed.data);
+      },
+    },
+    handlers,
+  );
+}
+
+type ConversationHandlers = ChannelHandlers & {
+  onMessage: (message: ChatMessage) => void;
+  onRead: (event: ChatReadEvent) => void;
+};
+
+/** Dengarkan pesan baru & penanda baca di channel private 1 percakapan (T-11). */
+export function connectConversation(
+  conversationId: string,
+  config: PusherConfig,
+  handlers: ConversationHandlers,
+): Promise<() => void> {
+  return connectChannel(
+    conversationChannelName(conversationId),
+    config,
+    {
+      [CHAT_MESSAGE_EVENT]: (data) => {
+        const parsed = chatMessageSchema.safeParse(data);
+        if (parsed.success) handlers.onMessage(parsed.data);
+      },
+      [CHAT_READ_EVENT]: (data) => {
+        const parsed = chatReadEventSchema.safeParse(data);
+        if (parsed.success) handlers.onRead(parsed.data);
+      },
+    },
+    handlers,
+  );
 }

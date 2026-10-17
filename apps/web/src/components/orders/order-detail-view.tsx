@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { FaCircleCheck, FaTriangleExclamation } from "react-icons/fa6";
 import type { OrderDetail, OrderStatusValue } from "@ecommerce/shared";
+import { ChatStartButton } from "@/components/chat/chat-start-button";
 import { confirmOrderReceived, getOrder } from "@/lib/order-api";
 import { formatRupiah } from "@/lib/format";
 import { TrackingTimeline } from "./tracking-timeline";
@@ -83,9 +84,16 @@ export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
       )}
 
       <section className="card">
-        <div className="flex items-center justify-between py-2">
-          <h2 className="text-sm font-semibold text-[var(--fg)]">{order.sellerName}</h2>
-          <span className="muted small">{order.orderNo}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 py-2">
+          <div className="flex flex-col">
+            <h2 className="text-sm font-semibold text-[var(--fg)]">{order.sellerName}</h2>
+            <span className="muted small">{order.orderNo}</span>
+          </div>
+          <ChatStartButton
+            target={{ orderId: order.id }}
+            loginNext={`/orders/${order.id}`}
+            className="btn-ghost !px-3 !py-1.5 text-xs"
+          />
         </div>
         <ul className="!m-0 !p-0 !shadow-none">
           {order.items.map((item) => (

@@ -103,6 +103,23 @@ Aturan sengketa: satu tiket aktif per order (dijaga unique index DB), hanya buye
 
 Setelah `git pull`/ganti project: `npm run db:migrate` (migrasi `0004_admin_panel`: tabel `disputes`, `dispute_messages`, kolom `sellers.document_url`, nilai notifikasi `dispute_update`). Tidak ada env baru.
 
+## Chat realtime buyer ↔ seller (T-11)
+
+| Halaman / komponen | Fungsi |
+|---|---|
+| Tombol **Chat Penjual** di `/product/[slug]` dan di `/orders/[id]` | Membuat/membuka percakapan lalu membuka widget chat melayang di halaman yang sama (guest → login dulu, balik ke halaman itu) |
+| Tombol **Chat pembeli** di kartu pesanan seller (`/seller/orders`) | Seller memulai chat dari pesanan (pembeli tamu/guest tidak bisa dihubungi) |
+| `/chat`, `/chat/[id]` | Daftar percakapan (sebagai pembeli dan/atau penjual) dan thread penuh |
+| Menu **Chat** + badge | Di header beranda, produk, akun/keranjang, dan navigasi toko; badge = total pesan belum dibaca |
+
+Cara kerja: satu percakapan per pasangan (buyer, seller) — dijaga unique index DB, konteks produk selalu mengikuti produk terakhir yang ditanyakan. Pesan dikirim optimistik dengan `clientId` (kirim ulang aman, tidak membuat pesan ganda), realtime lewat **channel Pusher private per percakapan** (`private-chat-<id>`, otorisasi `POST /api/pusher/auth` memastikan hanya buyer/seller percakapan itu). Tanpa kredensial Pusher thread memakai polling 4 dtk (tab terlihat). Pesan baru masuk ke bell notifikasi (digabung: maksimal 1 notifikasi chat belum dibaca per percakapan); membuka thread menandai pesan dan notifikasinya terbaca, lawan bicara melihat penanda "Dibaca".
+
+Aturan: maks 2000 karakter/pesan, 20 pesan/menit/user, toko non-aktif (suspend) atau akun pembeli non-aktif tidak bisa menerima pesan baru (riwayat tetap terbaca), tidak bisa chat dengan toko sendiri, percakapan tanpa pesan tidak muncul di daftar, non-peserta selalu mendapat 404.
+
+Endpoint: `GET/POST /api/chat/conversations` · `GET /api/chat/unread-count` · `GET /api/chat/conversations/:id` · `GET/POST /api/chat/conversations/:id/messages` (`?before=` / `?after=`) · `POST /api/chat/conversations/:id/read`.
+
+Setelah ganti project: `npm run db:migrate` (migrasi `0005_chat`: kolom `messages.client_id` + unique index idempotensi, index `conversations_buyer_idx`). Tidak ada env atau dependency baru (Pusher dari T-09B).
+
 ## Env
 
 - `apps/api/.env` — `API_HOST`, `API_PORT`, `WEB_URL`, `DATABASE_URL`, `REDIS_URL` + variabel docker (`POSTGRES_*`, `REDIS_PORT`, `MEILI_*`) + `PUSHER_*` (T-09B, opsional di dev).

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ChatNavLink } from "@/components/chat/chat-nav-link";
 import { NotificationBell } from "@/components/notification/notification-bell";
 
 const LINKS = [
@@ -32,6 +33,7 @@ export function SellerNav({ userId }: { userId: string }) {
       <Link href="/" className="tab ml-auto">
         Ke toko
       </Link>
+      <ChatNavLink variant="tab" />
       <NotificationBell userId={userId} />
     </nav>
   );

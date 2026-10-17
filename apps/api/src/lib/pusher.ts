@@ -27,21 +27,25 @@ export const realtimeConfig: RealtimeConfig =
     : { enabled: false };
 
 /**
- * Kirim event ke channel private milik 1 user. Best-effort: kegagalan Pusher TIDAK boleh
- * menggagalkan flow bisnis — notifikasi sudah tersimpan di DB dan akan muncul lewat resync/polling.
+ * Kirim event ke channel mana pun (user / percakapan). Best-effort: kegagalan Pusher TIDAK boleh
+ * menggagalkan flow bisnis — data sudah tersimpan di DB dan akan muncul lewat resync/polling.
  */
-export async function publishToUser(userId: string, event: string, data: unknown): Promise<void> {
+export async function publishToChannel(channelName: string, event: string, data: unknown): Promise<void> {
   if (!client) return;
   try {
-    await client.trigger(userChannelName(userId), event, data);
+    await client.trigger(channelName, event, data);
   } catch (err) {
     console.warn(`[pusher] gagal publish "${event}":`, err instanceof Error ? err.message : err);
   }
 }
 
+/** Kirim event ke channel private milik 1 user (notifikasi, T-09B). */
+export const publishToUser = (userId: string, event: string, data: unknown): Promise<void> =>
+  publishToChannel(userChannelName(userId), event, data);
+
 /**
- * Tanda tangan otorisasi channel private. Caller WAJIB sudah memastikan `channelName` milik user
- * yang sedang login — fungsi ini hanya menandatangani.
+ * Tanda tangan otorisasi channel private. Caller WAJIB sudah memastikan user yang sedang login
+ * berhak atas `channelName` (channel user sendiri / percakapan yang diikuti) — fungsi ini hanya menandatangani.
  */
 export function signChannelAuth(socketId: string, channelName: string) {
   if (!client) return null;

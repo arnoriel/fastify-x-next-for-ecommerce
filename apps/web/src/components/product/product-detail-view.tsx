@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { FaCartPlus, FaStar, FaTriangleExclamation } from "react-icons/fa6";
 import type { ProductWithVariants, Variant } from "@ecommerce/shared";
+import { ChatStartButton } from "@/components/chat/chat-start-button";
 import { formatCompactCount, formatRupiah } from "@/lib/format";
 import { useCartStore, type CartState } from "@/lib/cart-store";
 import { addGuestCartItem } from "@/lib/guest-cart";
@@ -175,6 +176,12 @@ export function ProductDetailView({ product }: { product: ProductWithVariants })
             </button>
             {message && <span className="field-error">{message}</span>}
           </div>
+
+          <ChatStartButton
+            target={{ productId: product.id }}
+            loginNext={`/product/${product.slug}`}
+            className="btn-ghost flex w-full !rounded-2xl !py-3"
+          />
         </div>
 
         {product.description && (

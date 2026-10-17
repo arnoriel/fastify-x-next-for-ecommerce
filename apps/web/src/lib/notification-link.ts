@@ -33,8 +33,10 @@ export function resolveNotificationHref(n: Pick<NotificationView, "type" | "payl
         : `/disputes/${encodeURIComponent(disputeId)}`;
     }
 
-    // Halaman chat dibuat di T-11 (payload: { conversationId }); sampai itu ada tidak ada tujuan.
-    case "chat_message":
-      return null;
+    // T-11: payload { conversationId } → thread chat; tanpa id jatuh ke daftar chat.
+    case "chat_message": {
+      const conversationId = asString(n.payload.conversationId);
+      return conversationId ? `/chat/${encodeURIComponent(conversationId)}` : "/chat";
+    }
   }
 }

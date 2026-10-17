@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { FaChevronLeft, FaTriangleExclamation } from "react-icons/fa6";
+import { ChatNavLink } from "@/components/chat/chat-nav-link";
 import { NotificationBell } from "@/components/notification/notification-bell";
 import { ProductDetailView } from "@/components/product/product-detail-view";
 import { getProductBySlug } from "@/lib/api";
@@ -50,7 +51,12 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           <FaChevronLeft aria-hidden size={12} />
           Kembali
         </Link>
-        {user && <NotificationBell userId={user.id} />}
+        {user && (
+          <div className="flex items-center gap-2">
+            <ChatNavLink />
+            <NotificationBell userId={user.id} />
+          </div>
+        )}
       </div>
       <ProductDetailView product={result.product} />
     </main>

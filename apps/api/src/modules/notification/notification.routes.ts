@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   notificationListResponseSchema,
   notificationPulseSchema,
+  parseConversationChannel,
   pusherAuthRequestSchema,
   realtimeConfigSchema,
   userChannelName,
@@ -11,6 +12,7 @@ import { db, schema } from "../../db";
 import { httpError } from "../../lib/http-error";
 import { realtimeConfig, signChannelAuth } from "../../lib/pusher";
 import { requireAuth } from "../../plugins/auth";
+import { isConversationParticipant } from "../chat/chat.service";
 import { toNotificationView } from "./notification.service";
 
 export const notificationRoutes: FastifyPluginAsync = async (app) => {
@@ -82,10 +84,15 @@ export const notificationRoutes: FastifyPluginAsync = async (app) => {
     realtimeConfigSchema.parse(realtimeConfig),
   );
 
-  // Otorisasi channel private: user hanya boleh subscribe ke channel miliknya sendiri.
+  // Otorisasi channel private: channel notifikasi milik sendiri, atau channel chat (T-11) dari
+  // percakapan yang user ikuti sebagai buyer/seller. Selain itu ditolak.
   app.post("/api/pusher/auth", { preHandler: requireAuth }, async (req) => {
     const { socketId, channelName } = pusherAuthRequestSchema.parse(req.body);
-    if (channelName !== userChannelName(req.user!.id)) {
+    const conversationId = parseConversationChannel(channelName);
+    const allowed = conversationId
+      ? await isConversationParticipant(conversationId, req.user!.id)
+      : channelName === userChannelName(req.user!.id);
+    if (!allowed) {
       throw httpError(403, "CHANNEL_FORBIDDEN", "Anda tidak boleh mengakses channel ini.");
     }
     const signed = signChannelAuth(socketId, channelName);

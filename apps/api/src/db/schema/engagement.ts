@@ -71,6 +71,7 @@ export const conversations = pgTable(
   (t) => [
     uniqueIndex("conversations_buyer_seller_uq").on(t.buyerId, t.sellerId),
     index("conversations_seller_idx").on(t.sellerId, t.lastMessageAt),
+    index("conversations_buyer_idx").on(t.buyerId, t.lastMessageAt),
     check("conversations_unread_chk", sql`${t.buyerUnread} >= 0 and ${t.sellerUnread} >= 0`),
   ],
 );
@@ -87,11 +88,16 @@ export const messages = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
     imageUrl: text("image_url"),
+    // T-11: id dari client per pesan → kirim ulang (retry jaringan / klik ganda) tidak membuat pesan ganda.
+    clientId: text("client_id"),
     readAt: timestamp("read_at", { withTimezone: true }),
     ...timestamps,
   },
   (t) => [
     index("messages_conversation_idx").on(t.conversationId, t.createdAt),
+    uniqueIndex("messages_client_uq")
+      .on(t.conversationId, t.senderId, t.clientId)
+      .where(sql`${t.clientId} is not null`),
     check("messages_body_chk", sql`length(trim(${t.body})) > 0`),
   ],
 );

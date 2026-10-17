@@ -9,6 +9,7 @@ import { authRoutes } from "./modules/auth/routes";
 import { cartRoutes } from "./modules/cart/cart.routes";
 import { categoryRoutes } from "./modules/catalog/category.routes";
 import { productRoutes } from "./modules/catalog/product.routes";
+import { chatRoutes } from "./modules/chat/chat.routes";
 import { checkoutRoutes } from "./modules/checkout/checkout.routes";
 import { disputeRoutes } from "./modules/dispute/dispute.routes";
 import { notificationRoutes } from "./modules/notification/notification.routes";
@@ -56,6 +57,7 @@ export async function buildApp() {
   await app.register(checkoutRoutes);
   await app.register(orderRoutes);
   await app.register(notificationRoutes);
+  await app.register(chatRoutes);
   await app.register(paymentRoutes);
   await app.register(sellerOnboardingRoutes);
   await app.register(shippingRoutes);

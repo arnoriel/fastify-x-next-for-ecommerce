@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { SELLER_STATUS_LABELS, type SellerOrder } from "@ecommerce/shared";
+import { ChatStartButton } from "@/components/chat/chat-start-button";
 import { formatDateTime, formatRupiah } from "@/lib/format";
 
 const FALLBACK_IMAGE = "/product-placeholder.svg";
@@ -102,7 +103,8 @@ export function SellerOrderCard({ order, busyAction, disabled, onAction }: Props
           <span className="font-bold text-[var(--fg)]">{formatRupiah(order.total)}</span>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-start gap-2">
+          <ChatStartButton target={{ orderId: order.id }} loginNext="/seller/orders" label="Chat pembeli" />
           {order.dispute.activeId ? (
             <Link href={`/disputes/${order.dispute.activeId}`} className="btn-ghost">
               Lihat laporan
