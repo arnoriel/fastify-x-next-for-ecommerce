@@ -52,6 +52,11 @@ export default async function HomePage({
           <p className="muted small">Marketplace multi-vendor</p>
         </div>
         <nav className="nav !mt-0 shrink-0 items-center">
+          {user && (
+            <Link href="/wishlist" className="btn-ghost">
+              Wishlist
+            </Link>
+          )}
           {user && <ChatNavLink />}
           {user && <NotificationBell userId={user.id} />}
           {user?.role === "admin" && (
@@ -83,7 +88,7 @@ export default async function HomePage({
 
       <SearchFilterBar categories={categories} />
 
-      <ProductGrid result={products} />
+      <ProductGrid result={products} loggedIn={Boolean(user)} />
     </main>
   );
 }

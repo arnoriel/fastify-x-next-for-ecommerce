@@ -25,6 +25,9 @@ export default async function AccountPage() {
       <Link href="/orders" className="btn">
         Riwayat pesanan
       </Link>
+      <Link href="/wishlist" className="btn">
+        Wishlist
+      </Link>
       <Link href="/disputes" className="btn">
         Laporan &amp; sengketa
       </Link>

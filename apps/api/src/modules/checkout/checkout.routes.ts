@@ -12,40 +12,14 @@ import { httpError } from "../../lib/http-error";
 import { generateInvoiceNo, generateOrderNo } from "../../lib/order-number";
 import { shippingProvider } from "../../lib/shipping";
 import { requireAuth } from "../../plugins/auth";
+import { resolveVoucher } from "../voucher/voucher.service";
+import { groupBySeller, loadCartForCheckout } from "./checkout.cart";
 import {
   applyPaymentStatus,
   CHECKOUT_TTL_MS,
   FREE_CHECKOUT_PAYMENT_METHOD,
   initiateSnapPayment,
 } from "../payment/payment.service";
-
-type CartItemWithVariant = Awaited<ReturnType<typeof loadCartForCheckout>>[number];
-
-/** Cart item milik user, join varian+produk+seller — dipakai rate lookup & create checkout. */
-async function loadCartForCheckout(userId: string) {
-  const cart = await db.query.carts.findFirst({ where: (c, { eq: eqq }) => eqq(c.userId, userId) });
-  if (!cart) return [];
-  return db.query.cartItems.findMany({
-    where: (ci, { eq: eqq }) => eqq(ci.cartId, cart.id),
-    with: { variant: { with: { product: { with: { seller: true } } } } },
-  });
-}
-
-/** Kelompokkan item cart per seller, hitung berat total (gram) untuk rate ongkir. */
-function groupBySeller(items: CartItemWithVariant[]) {
-  const bySeller = new Map<string, { sellerId: string; items: typeof items; weightGram: number }>();
-  for (const item of items) {
-    const product = item.variant?.product;
-    const seller = product?.seller;
-    if (!product || !seller) continue;
-    const entry = bySeller.get(seller.id) ?? { sellerId: seller.id, items: [], weightGram: 0 };
-    entry.items.push(item);
-    const unitWeight = item.variant!.weightGram ?? product.weightGram;
-    entry.weightGram += unitWeight * item.quantity;
-    bySeller.set(seller.id, entry);
-  }
-  return bySeller;
-}
 
 async function loadOwnedAddress(userId: string, addressId: string) {
   const address = await db.query.addresses.findFirst({
@@ -66,65 +40,6 @@ function addressSnapshot(address: NonNullable<Awaited<ReturnType<typeof loadOwne
     street: address.street,
     biteshipAreaId: address.biteshipAreaId ?? null,
   };
-}
-
-/**
- * Validasi + hitung diskon 1 voucher terhadap subtotal tertentu. Melempar HttpError kalau
- * voucher invalid/expired/quota habis/tidak memenuhi syarat — tidak silently ignore, supaya
- * buyer tahu kenapa kode promo mereka tidak berlaku.
- */
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-/** `executor` = `tx` dari transaksi checkout — memastikan cek quota/limit dibaca dalam transaksi
- * yang sama dengan increment `usedCount` di bawah (FOR UPDATE implicit lewat row lock Postgres
- * saat update), bukan dari snapshot db di luar transaksi yang bisa basi akibat race. */
-async function resolveVoucher(
-  executor: Tx,
-  params: {
-    code: string;
-    userId: string;
-    scope: "platform" | "seller";
-    sellerId?: string;
-    subtotal: number;
-  },
-) {
-  // Row lock: cegah dua checkout paralel lolos cek quota bersamaan lalu sama-sama increment
-  // melewati batas (classic race condition pada voucher terbatas).
-  const [voucher] = await executor
-    .select()
-    .from(schema.vouchers)
-    .where(sql`upper(${schema.vouchers.code}) = ${params.code.toUpperCase()}`)
-    .for("update");
-  if (!voucher || !voucher.isActive) throw httpError(400, "VOUCHER_INVALID", `Voucher ${params.code} tidak valid.`);
-  if (voucher.scope !== params.scope || (params.scope === "seller" && voucher.sellerId !== params.sellerId)) {
-    throw httpError(400, "VOUCHER_INVALID", `Voucher ${params.code} tidak berlaku untuk toko ini.`);
-  }
-  const now = new Date();
-  if (now < voucher.startsAt || now > voucher.expiresAt) {
-    throw httpError(400, "VOUCHER_EXPIRED", `Voucher ${params.code} sudah tidak berlaku.`);
-  }
-  if (voucher.usedCount >= voucher.quota) {
-    throw httpError(400, "VOUCHER_QUOTA_EXCEEDED", `Kuota voucher ${params.code} sudah habis.`);
-  }
-  if (params.subtotal < voucher.minPurchase) {
-    throw httpError(
-      400,
-      "VOUCHER_MIN_PURCHASE",
-      `Minimal belanja untuk voucher ${params.code} adalah Rp${voucher.minPurchase.toLocaleString("id-ID")}.`,
-    );
-  }
-
-  const usageCount = await executor
-    .select({ count: sql<number>`count(*)::int` })
-    .from(schema.voucherUsages)
-    .where(sql`${schema.voucherUsages.voucherId} = ${voucher.id} and ${schema.voucherUsages.userId} = ${params.userId}`);
-  if ((usageCount[0]?.count ?? 0) >= voucher.perUserLimit) {
-    throw httpError(400, "VOUCHER_LIMIT_REACHED", `Anda sudah mencapai batas pemakaian voucher ${params.code}.`);
-  }
-
-  const rawDiscount = voucher.type === "percent" ? Math.round((params.subtotal * voucher.value) / 100) : voucher.value;
-  const discount = Math.min(rawDiscount, voucher.maxDiscount ?? rawDiscount, params.subtotal);
-  return { voucher, discount };
 }
 
 function serializeOrder(
@@ -331,7 +246,7 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
             scope: "seller",
             sellerId: seller.id,
             subtotal: sellerSubtotal,
-          });
+          }, { lock: true });
           sellerDiscount = discount;
           voucherUsageInserts.push({ voucherId: voucher.id, userId, discount });
           await tx
@@ -380,7 +295,7 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
           userId,
           scope: "platform",
           subtotal: checkoutSubtotal,
-        });
+        }, { lock: true });
         if (discount > 0 && checkoutSubtotal > 0) {
           let distributed = 0;
           for (let i = 0; i < orderRows.length; i += 1) {

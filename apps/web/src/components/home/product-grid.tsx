@@ -2,7 +2,7 @@ import { FaMagnifyingGlass, FaTriangleExclamation } from "react-icons/fa6";
 import type { ProductListResponse } from "@ecommerce/shared";
 import { ProductCard } from "./product-card";
 
-export function ProductGrid({ result }: { result: ProductListResponse | null }) {
+export function ProductGrid({ result, loggedIn = false }: { result: ProductListResponse | null; loggedIn?: boolean }) {
   if (result === null) {
     return (
       <div className="glass flex flex-col items-center gap-2 p-10 text-center">
@@ -26,7 +26,7 @@ export function ProductGrid({ result }: { result: ProductListResponse | null }) 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {result.items.map((product) => (
-        <ProductCard key={product.id} product={product} />
+        <ProductCard key={product.id} product={product} loggedIn={loggedIn} />
       ))}
     </div>
   );

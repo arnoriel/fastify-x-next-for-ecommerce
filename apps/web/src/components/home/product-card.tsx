@@ -2,18 +2,21 @@ import Image from "next/image";
 import Link from "next/link";
 import { FaStar } from "react-icons/fa6";
 import type { ProductWithVariants } from "@ecommerce/shared";
+import { WishlistButton } from "@/components/wishlist/wishlist-button";
 import { formatCompactCount, formatRupiah } from "@/lib/format";
 
 const FALLBACK_IMAGE = "/product-placeholder.svg";
 
-export function ProductCard({ product }: { product: ProductWithVariants }) {
+export function ProductCard({ product, loggedIn = false }: { product: ProductWithVariants; loggedIn?: boolean }) {
   const thumbnail = product.images[0] ?? FALLBACK_IMAGE;
   const hasRating = product.ratingCount > 0;
 
   return (
+    // Ikon hati sejajar dengan link (bukan di dalamnya): tombol di dalam <a> tidak valid & ikut membuka produk.
+    <div className="relative flex">
     <Link
       href={`/product/${product.slug}`}
-      className="clay group flex flex-col overflow-hidden p-2.5 transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+      className="clay group flex min-w-0 flex-1 flex-col overflow-hidden p-2.5 transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
     >
       <div className="clay-inset relative aspect-square w-full overflow-hidden">
         <Image
@@ -42,5 +45,7 @@ export function ProductCard({ product }: { product: ProductWithVariants }) {
         </div>
       </div>
     </Link>
+    <WishlistButton productId={product.id} loggedIn={loggedIn} variant="card" className="absolute right-4 top-4" />
+    </div>
   );
 }

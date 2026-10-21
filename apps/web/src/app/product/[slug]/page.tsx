@@ -5,6 +5,7 @@ import { FaChevronLeft, FaTriangleExclamation } from "react-icons/fa6";
 import { ChatNavLink } from "@/components/chat/chat-nav-link";
 import { NotificationBell } from "@/components/notification/notification-bell";
 import { ProductDetailView } from "@/components/product/product-detail-view";
+import { ProductReviews } from "@/components/review/product-reviews";
 import { getProductBySlug } from "@/lib/api";
 import { getSession } from "@/lib/session";
 
@@ -58,7 +59,8 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           </div>
         )}
       </div>
-      <ProductDetailView product={result.product} />
+      <ProductDetailView product={result.product} loggedIn={Boolean(user)} />
+      <ProductReviews slug={result.product.slug} />
     </main>
   );
 }

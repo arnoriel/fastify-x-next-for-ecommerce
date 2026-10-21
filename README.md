@@ -120,6 +120,18 @@ Endpoint: `GET/POST /api/chat/conversations` · `GET /api/chat/unread-count` · 
 
 Setelah ganti project: `npm run db:migrate` (migrasi `0005_chat`: kolom `messages.client_id` + unique index idempotensi, index `conversations_buyer_idx`). Tidak ada env atau dependency baru (Pusher dari T-09B).
 
+## Review, wishlist & voucher (T-12)
+
+**Review** — di detail pesanan (`/orders/[id]`) yang berstatus `completed`, tiap item punya form bintang 1–5 + ulasan opsional (maks 1000 karakter). Satu review per item (unique index DB), hanya pembeli item tsb, bisa diubah sampai 7 hari. Rating & jumlah review produk dihitung ulang dari tabel `reviews` di bawah row lock produk (dua review bersamaan tidak saling menimpa). Ulasan publik tampil di `/product/[slug]` (ringkasan, distribusi bintang yang bisa jadi filter, muat lebih banyak); nama pembeli disamarkan (`B***o`). Ulasan bergambar & balasan seller belum termasuk.
+
+**Wishlist** — ikon hati di kartu produk & halaman produk, daftar di `/wishlist`. Aksi idempoten (`PUT`/`DELETE`, bukan toggle) + optimistik; guest yang menekan hati diarahkan ke login lalu kembali. Maks 200 produk; produk nonaktif/habis tetap tampil dengan penanda supaya bisa dihapus.
+
+**Voucher** — kolom voucher di checkout kini punya tombol **Pakai** (validasi server terhadap keranjang saat ini, pesan jelas: kedaluwarsa / belum mulai / kuota habis / minimal belanja / batas pemakaian / salah kolom), daftar voucher yang bisa dipilih, dan diskon tampil di ringkasan. Hanya voucher yang lolos validasi yang dikirim; server tetap memvalidasi ulang dengan row lock saat submit. Voucher dari draft (setelah login ulang) dicek ulang otomatis. Kode seed: `WELCOME10`, `HEMAT20K` (platform), `SELLER15` (toko), `EXPIRED5` (uji ditolak).
+
+Endpoint: `GET /api/products/:slug/reviews` · `GET /api/orders/:id/reviews` · `POST /api/order-items/:id/review` · `PATCH /api/reviews/:id` · `GET /api/wishlist` · `GET /api/wishlist/ids` · `PUT|DELETE /api/wishlist/:productId` · `GET /api/vouchers/available` · `POST /api/vouchers/validate`.
+
+Tidak ada migrasi baru dan tidak ada env/dependency baru (tabel `reviews`, `wishlists`, `vouchers` sudah dari T-02).
+
 ## Env
 
 - `apps/api/.env` — `API_HOST`, `API_PORT`, `WEB_URL`, `DATABASE_URL`, `REDIS_URL` + variabel docker (`POSTGRES_*`, `REDIS_PORT`, `MEILI_*`) + `PUSHER_*` (T-09B, opsional di dev).

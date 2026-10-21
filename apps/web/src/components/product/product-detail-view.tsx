@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { FaCartPlus, FaStar, FaTriangleExclamation } from "react-icons/fa6";
 import type { ProductWithVariants, Variant } from "@ecommerce/shared";
 import { ChatStartButton } from "@/components/chat/chat-start-button";
+import { WishlistButton } from "@/components/wishlist/wishlist-button";
 import { formatCompactCount, formatRupiah } from "@/lib/format";
 import { useCartStore, type CartState } from "@/lib/cart-store";
 import { addGuestCartItem } from "@/lib/guest-cart";
@@ -17,7 +18,7 @@ function hasAnyPurchasableVariant(variants: Variant[]): boolean {
   return variants.some((v) => v.isActive && v.stock > 0);
 }
 
-export function ProductDetailView({ product }: { product: ProductWithVariants }) {
+export function ProductDetailView({ product, loggedIn = false }: { product: ProductWithVariants; loggedIn?: boolean }) {
   const router = useRouter();
   const add = useCartStore((s: CartState) => s.add);
 
@@ -101,9 +102,12 @@ export function ProductDetailView({ product }: { product: ProductWithVariants })
 
       <div className="glass flex flex-col gap-5 p-5 sm:p-6">
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-xl font-extrabold leading-tight tracking-tight text-[var(--fg)] sm:text-2xl">
-            {product.name}
-          </h1>
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="text-xl font-extrabold leading-tight tracking-tight text-[var(--fg)] sm:text-2xl">
+              {product.name}
+            </h1>
+            <WishlistButton productId={product.id} loggedIn={loggedIn} variant="detail" />
+          </div>
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-[var(--muted)]">
             {hasRating ? (
               <>

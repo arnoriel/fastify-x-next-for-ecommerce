@@ -58,7 +58,7 @@ function serializeProduct(row: ProductRow): Product {
   };
 }
 
-function serializeProductWithVariants(row: ProductRow, variants: VariantRow[]): ProductWithVariants {
+export function serializeProductWithVariants(row: ProductRow, variants: VariantRow[]): ProductWithVariants {
   return { ...serializeProduct(row), variants: variants.map(serializeVariant) };
 }
 

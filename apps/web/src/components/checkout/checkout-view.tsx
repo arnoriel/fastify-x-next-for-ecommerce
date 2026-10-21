@@ -3,12 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FaTriangleExclamation } from "react-icons/fa6";
-import type { Address, CartGroup, CreateCheckoutInput, ShippingRate } from "@ecommerce/shared";
+import type { Address, AvailableVoucher, CartGroup, CreateCheckoutInput, ShippingRate, VoucherPreview } from "@ecommerce/shared";
 import { listAddresses } from "@/lib/address-api";
 import { getShippingRates, submitCheckout } from "@/lib/cart-api";
 import { useCartStore } from "@/lib/cart-store";
 import { formatRupiah } from "@/lib/format";
+import { ApiError } from "@/lib/http";
+import { listAvailableVouchers, validateVoucher } from "@/lib/voucher-api";
 import { AddressForm } from "./address-form";
+import { VoucherField } from "./voucher-field";
 
 const DRAFT_KEY = "checkout_draft_v1";
 const IDEMPOTENCY_KEY_STORAGE = "checkout_idempotency_v1";
@@ -65,6 +68,17 @@ function clearDraft() {
 
 type SellerSelection = { courierCode: string; service: string; voucherCode: string };
 
+const PLATFORM_KEY = "platform";
+const sellerKey = (sellerId: string) => `seller:${sellerId}`;
+
+function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  const { [key]: _removed, ...rest } = record;
+  return rest;
+}
+
+type VoucherJob = { key: string; code: string; sellerId?: string };
+type VoucherCheck = { job: VoucherJob; preview: VoucherPreview } | { job: VoucherJob; error: string };
+
 function availableItemsOf(group: CartGroup) {
   return group.items.filter((i) => i.isAvailable);
 }
@@ -80,7 +94,11 @@ export function CheckoutView() {
   const [rates, setRates] = useState<Record<string, ShippingRate[]>>({});
   const [ratesLoading, setRatesLoading] = useState(false);
   const [selections, setSelections] = useState<Record<string, SellerSelection>>({});
+  // `selections[..].voucherCode` / `platformVoucher` = kode yang SUDAH lolos validasi server (dikirim saat checkout).
   const [platformVoucher, setPlatformVoucher] = useState("");
+  const [previews, setPreviews] = useState<Record<string, VoucherPreview>>({});
+  const [voucherErrors, setVoucherErrors] = useState<Record<string, string>>({});
+  const [availableVouchers, setAvailableVouchers] = useState<AvailableVoucher[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,19 +148,30 @@ export function CheckoutView() {
           groups.map((g) => getShippingRates({ sellerId: g.sellerId, addressId: currentAddressId })),
         );
         const nextRates: Record<string, ShippingRate[]> = {};
-        const nextSelections: Record<string, SellerSelection> = {};
-        results.forEach((r, idx) => {
-          const group = groups[idx]!;
+        results.forEach((r) => {
           nextRates[r.sellerId] = r.rates;
-          const cheapest = [...r.rates].sort((a, b) => a.price - b.price)[0];
-          nextSelections[group.sellerId] = {
-            courierCode: cheapest?.courierCode ?? "",
-            service: cheapest?.service ?? "",
-            voucherCode: "",
-          };
         });
         setRates(nextRates);
-        setSelections(nextSelections);
+        // Kurir pilihan sebelumnya dipertahankan bila masih tersedia (mis. pulih dari draft setelah login);
+        // voucher yang sudah dipakai tidak ikut hilang saat ongkir dimuat ulang.
+        setSelections((prev) => {
+          const next: Record<string, SellerSelection> = {};
+          results.forEach((r, idx) => {
+            const group = groups[idx]!;
+            const before = prev[group.sellerId];
+            const kept = before
+              ? r.rates.find((x) => x.courierCode === before.courierCode && x.service === before.service)
+              : undefined;
+            const cheapest = [...r.rates].sort((a, b) => a.price - b.price)[0];
+            const pick = kept ?? cheapest;
+            next[group.sellerId] = {
+              courierCode: pick?.courierCode ?? "",
+              service: pick?.service ?? "",
+              voucherCode: before?.voucherCode ?? "",
+            };
+          });
+          return next;
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Gagal memuat ongkos kirim.");
       } finally {
@@ -157,13 +186,95 @@ export function CheckoutView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addressId, groups.length]);
 
+  // ---------- Voucher ----------
+
+  /** Cek ulang voucher yang sudah terpasang terhadap keranjang terkini (pulih dari draft / checkout ditolak
+   * karena voucher). Yang tidak lagi valid dilepas dengan pesan jelas — bukan dibiarkan diam-diam gagal. */
+  const revalidateVouchers = useCallback(async () => {
+    const jobs: VoucherJob[] = [];
+    for (const g of groups) {
+      const code = selections[g.sellerId]?.voucherCode;
+      if (code) jobs.push({ key: sellerKey(g.sellerId), code, sellerId: g.sellerId });
+    }
+    if (platformVoucher) jobs.push({ key: PLATFORM_KEY, code: platformVoucher });
+    if (jobs.length === 0) return;
+
+    const checks: VoucherCheck[] = await Promise.all(
+      jobs.map(async (job): Promise<VoucherCheck> => {
+        try {
+          return { job, preview: await validateVoucher({ code: job.code, sellerId: job.sellerId }) };
+        } catch (err) {
+          return { job, error: err instanceof Error ? err.message : "Voucher tidak valid." };
+        }
+      }),
+    );
+
+    const nextPreviews: Record<string, VoucherPreview> = {};
+    const nextErrors: Record<string, string> = {};
+    for (const check of checks) {
+      if ("preview" in check) nextPreviews[check.job.key] = check.preview;
+      else nextErrors[check.job.key] = check.error;
+    }
+    setPreviews(nextPreviews);
+    setVoucherErrors(nextErrors);
+    setSelections((prev) => {
+      const next = { ...prev };
+      for (const check of checks) {
+        const sellerId = check.job.sellerId;
+        if ("error" in check && sellerId && next[sellerId]) next[sellerId] = { ...next[sellerId]!, voucherCode: "" };
+      }
+      return next;
+    });
+    if (nextErrors[PLATFORM_KEY]) setPlatformVoucher("");
+  }, [groups, selections, platformVoucher]);
+
+  const vouchersChecked = useRef(false);
+  useEffect(() => {
+    if (vouchersChecked.current || !hasLoaded || groups.length === 0) return;
+    vouchersChecked.current = true;
+    void revalidateVouchers();
+  }, [hasLoaded, groups.length, revalidateVouchers]);
+
+  useEffect(() => {
+    if (!hasLoaded || groups.length === 0) return;
+    let cancelled = false;
+    // Saran voucher bersifat tambahan: gagal memuat tidak mengganggu checkout (kode tetap bisa diketik).
+    listAvailableVouchers()
+      .then((res) => {
+        if (!cancelled) setAvailableVouchers(res.items);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [hasLoaded, groups.length]);
+
+  function setSellerVoucher(sellerId: string, preview: VoucherPreview | null) {
+    setSelections((prev) => ({
+      ...prev,
+      [sellerId]: { courierCode: "", service: "", ...prev[sellerId], voucherCode: preview?.code ?? "" },
+    }));
+    setPreviews((prev) => (preview ? { ...prev, [sellerKey(sellerId)]: preview } : omitKey(prev, sellerKey(sellerId))));
+    setVoucherErrors((prev) => omitKey(prev, sellerKey(sellerId)));
+  }
+
+  function setPlatformVoucherPreview(preview: VoucherPreview | null) {
+    setPlatformVoucher(preview?.code ?? "");
+    setPreviews((prev) => (preview ? { ...prev, [PLATFORM_KEY]: preview } : omitKey(prev, PLATFORM_KEY)));
+    setVoucherErrors((prev) => omitKey(prev, PLATFORM_KEY));
+  }
+
   const shippingTotal = groups.reduce((sum, g) => {
     const sel = selections[g.sellerId];
     const rate = rates[g.sellerId]?.find((r) => r.courierCode === sel?.courierCode && r.service === sel?.service);
     return sum + (rate?.price ?? 0);
   }, 0);
   const subtotal = groups.reduce((sum, g) => sum + availableItemsOf(g).reduce((s, i) => s + i.subtotal, 0), 0);
-  const grandTotal = subtotal + shippingTotal;
+  const discountTotal = [...groups.map((g) => sellerKey(g.sellerId)), PLATFORM_KEY].reduce(
+    (sum, key) => sum + (previews[key]?.discount ?? 0),
+    0,
+  );
+  const grandTotal = Math.max(0, subtotal + shippingTotal - discountTotal);
 
   const allSellersHaveCourier = groups.every((g) => selections[g.sellerId]?.courierCode);
   const canSubmit = Boolean(addressId) && groups.length > 0 && allSellersHaveCourier && !ratesLoading && !submitting;
@@ -203,6 +314,8 @@ export function CheckoutView() {
         router.push(`/login?next=${encodeURIComponent("/checkout")}`);
         return;
       }
+      // Voucher ditolak server (kuota habis/kedaluwarsa saat submit): periksa ulang & lepas yang tidak valid.
+      if (err instanceof ApiError && err.code.startsWith("VOUCHER_")) void revalidateVouchers();
       setError(msg || "Checkout gagal. Silakan coba lagi.");
       setSubmitting(false);
     }
@@ -315,34 +428,30 @@ export function CheckoutView() {
               )}
             </div>
 
-            <div className="field pt-2">
-              <label htmlFor={`voucher-${group.sellerId}`}>Kode voucher toko (opsional)</label>
-              <input
-                id={`voucher-${group.sellerId}`}
-                value={sel?.voucherCode ?? ""}
-                onChange={(e) =>
-                  setSelections((prev) => ({
-                    ...prev,
-                    [group.sellerId]: { ...prev[group.sellerId]!, voucherCode: e.target.value },
-                  }))
-                }
-                placeholder="Masukkan kode voucher"
-              />
-            </div>
+            <VoucherField
+              label="Voucher toko (opsional)"
+              sellerId={group.sellerId}
+              applied={previews[sellerKey(group.sellerId)] ?? null}
+              suggestions={availableVouchers.filter((v) => v.scope === "seller" && v.sellerId === group.sellerId)}
+              externalError={voucherErrors[sellerKey(group.sellerId)]}
+              disabled={submitting}
+              onApplied={(preview) => setSellerVoucher(group.sellerId, preview)}
+              onRemoved={() => setSellerVoucher(group.sellerId, null)}
+            />
           </section>
         );
       })}
 
       <section className="card">
-        <div className="field py-2">
-          <label htmlFor="platform-voucher">Kode voucher platform (opsional)</label>
-          <input
-            id="platform-voucher"
-            value={platformVoucher}
-            onChange={(e) => setPlatformVoucher(e.target.value)}
-            placeholder="Masukkan kode voucher"
-          />
-        </div>
+        <VoucherField
+          label="Voucher platform (opsional)"
+          applied={previews[PLATFORM_KEY] ?? null}
+          suggestions={availableVouchers.filter((v) => v.scope === "platform")}
+          externalError={voucherErrors[PLATFORM_KEY]}
+          disabled={submitting}
+          onApplied={setPlatformVoucherPreview}
+          onRemoved={() => setPlatformVoucherPreview(null)}
+        />
       </section>
 
       <ul className="card">
@@ -354,6 +463,12 @@ export function CheckoutView() {
           <span className="muted small">Ongkos kirim</span>
           <span className="text-sm">{formatRupiah(shippingTotal)}</span>
         </li>
+        {discountTotal > 0 && (
+          <li>
+            <span className="muted small">Diskon voucher</span>
+            <span className="text-sm text-[var(--up)]">-{formatRupiah(discountTotal)}</span>
+          </li>
+        )}
         <li>
           <span className="font-semibold text-[var(--fg)]">Total</span>
           <span className="text-lg font-bold text-[var(--fg)]">{formatRupiah(grandTotal)}</span>

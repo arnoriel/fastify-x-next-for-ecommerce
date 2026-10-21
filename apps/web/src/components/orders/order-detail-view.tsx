@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { FaCircleCheck, FaTriangleExclamation } from "react-icons/fa6";
 import type { OrderDetail, OrderStatusValue } from "@ecommerce/shared";
 import { ChatStartButton } from "@/components/chat/chat-start-button";
+import { OrderReviewSection } from "@/components/review/order-review-section";
 import { confirmOrderReceived, getOrder } from "@/lib/order-api";
 import { formatRupiah } from "@/lib/format";
 import { TrackingTimeline } from "./tracking-timeline";
@@ -194,9 +195,7 @@ export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
         <p className="muted small text-center">{order.dispute.blockedReason}</p>
       )}
 
-      {(order.canReview || confirmed) && (
-        <p className="muted small text-center">Fitur beri review akan segera tersedia di halaman ini.</p>
-      )}
+      <OrderReviewSection orderId={order.id} items={order.items} enabled={order.status === "completed"} />
     </div>
   );
 }
