@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Tambah produk" };
 export const dynamic = "force-dynamic";
 
 async function getCategories() {
-  const res = await fetch(new URL("/api/categories", env.NEXT_PUBLIC_API_URL), { cache: "no-store" });
+  const res = await fetch(new URL("/api/categories", env.API_SERVER_URL), { cache: "no-store" });
   if (!res.ok) return [];
   const data = (await res.json()) as { items: { id: string; name: string }[] };
   return data.items;

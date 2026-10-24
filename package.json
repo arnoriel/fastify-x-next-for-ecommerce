@@ -29,7 +29,12 @@
     "infra:down": "npm run infra:down -w @ecommerce/api",
     "infra:reset": "npm run infra:reset -w @ecommerce/api",
     "infra:ps": "npm run infra:ps -w @ecommerce/api",
-    "infra:logs": "npm run infra:logs -w @ecommerce/api"
+    "infra:logs": "npm run infra:logs -w @ecommerce/api",
+    "prod:config": "docker compose --env-file .env.production -f docker-compose.prod.yml config -q",
+    "prod:up": "docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build",
+    "prod:down": "docker compose --env-file .env.production -f docker-compose.prod.yml down",
+    "prod:ps": "docker compose --env-file .env.production -f docker-compose.prod.yml ps",
+    "prod:logs": "docker compose --env-file .env.production -f docker-compose.prod.yml logs -f --tail=100"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",

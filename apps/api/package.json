@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/server.ts",
+    "build": "node scripts/build.mjs",
+    "start": "node --enable-source-maps dist/server.mjs",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
@@ -17,7 +19,8 @@
     "infra:down": "docker compose --profile \"*\" down",
     "infra:reset": "docker compose --profile \"*\" down -v && docker compose up -d --wait",
     "infra:ps": "docker compose --profile \"*\" ps",
-    "infra:logs": "docker compose --profile \"*\" logs -f --tail=100"
+    "infra:logs": "docker compose --profile \"*\" logs -f --tail=100",
+    "db:migrate:prod": "node dist/migrate.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.700.0",
@@ -37,6 +40,7 @@
   "devDependencies": {
     "@faker-js/faker": "^10.6.0",
     "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.25.12",
     "pino-pretty": "^13.1.3",
     "tsx": "^4.23.14"
   }

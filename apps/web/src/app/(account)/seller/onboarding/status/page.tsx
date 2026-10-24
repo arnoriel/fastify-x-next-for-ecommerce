@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 async function getStatus() {
   const cookieHeader = (await cookies()).toString();
   try {
-    const res = await fetch(new URL("/api/sellers/onboarding/status", env.NEXT_PUBLIC_API_URL), {
+    const res = await fetch(new URL("/api/sellers/onboarding/status", env.API_SERVER_URL), {
       headers: { cookie: cookieHeader },
       cache: "no-store",
       signal: AbortSignal.timeout(4000),

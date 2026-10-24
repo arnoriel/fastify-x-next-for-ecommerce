@@ -10,6 +10,9 @@ const optionalUrl = z.preprocess((v) => (v === "" ? undefined : v), httpUrl.opti
 
 const baseSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // Stage deploy. "staging" = perilaku production (NODE_ENV=production) tapi boleh memakai key SANDBOX
+  // Midtrans & Biteship testing. Kosong/"production" = aturan live key berlaku penuh.
+  APP_ENV: z.enum(["development", "staging", "production"]).optional(),
   API_HOST: z.string().min(1).default("localhost"),
   API_PORT: envPort.default(4000),
   WEB_URL: httpUrl,
@@ -67,6 +70,8 @@ const baseSchema = z.object({
 });
 
 const schema = baseSchema.superRefine((v, ctx) => {
+  // Aturan "wajib live key" hanya untuk production sungguhan, bukan staging.
+  const liveKeys = v.NODE_ENV === "production" && v.APP_ENV !== "staging";
   if (Boolean(v.GOOGLE_CLIENT_ID) !== Boolean(v.GOOGLE_CLIENT_SECRET)) {
     ctx.addIssue({
       code: "custom",
@@ -74,7 +79,7 @@ const schema = baseSchema.superRefine((v, ctx) => {
       message: "GOOGLE_CLIENT_ID dan GOOGLE_CLIENT_SECRET harus diisi bersamaan (atau kosongkan keduanya)",
     });
   }
-  if (v.NODE_ENV === "production" && v.MIDTRANS_SANDBOX === true) {
+  if (liveKeys && v.MIDTRANS_SANDBOX === true) {
     ctx.addIssue({
       code: "custom",
       path: ["MIDTRANS_SANDBOX"],
@@ -88,7 +93,7 @@ const schema = baseSchema.superRefine((v, ctx) => {
       message: "BITESHIP_API_KEY wajib di production (tanpa itu ongkir & resi memakai stub simulasi)",
     });
   }
-  if (v.NODE_ENV === "production" && v.BITESHIP_API_KEY?.startsWith("biteship_test")) {
+  if (liveKeys && v.BITESHIP_API_KEY?.startsWith("biteship_test")) {
     ctx.addIssue({
       code: "custom",
       path: ["BITESHIP_API_KEY"],

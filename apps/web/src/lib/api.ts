@@ -15,7 +15,7 @@ import { env } from "@/env";
 /** Ambil /ready dari API. `null` = API tidak terjangkau. 503 tetap dibaca (body berisi detail check). */
 export async function getApiReadiness(): Promise<ReadinessResponse | null> {
   try {
-    const res = await fetch(new URL("/ready", env.NEXT_PUBLIC_API_URL), {
+    const res = await fetch(new URL("/ready", env.API_SERVER_URL), {
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
     });
@@ -28,7 +28,7 @@ export async function getApiReadiness(): Promise<ReadinessResponse | null> {
 /** Daftar kategori aktif (bento grid homepage). `[]` = API tidak terjangkau / kosong. */
 export async function getCategories(): Promise<Category[]> {
   try {
-    const res = await fetch(new URL("/api/categories", env.NEXT_PUBLIC_API_URL), {
+    const res = await fetch(new URL("/api/categories", env.API_SERVER_URL), {
       next: { revalidate: 60 },
       signal: AbortSignal.timeout(4000),
     });
@@ -45,7 +45,7 @@ export async function getProductBySlug(
   slug: string,
 ): Promise<{ product: ProductWithVariants } | { product: null; notFound: boolean }> {
   try {
-    const res = await fetch(new URL(`/api/products/${encodeURIComponent(slug)}`, env.NEXT_PUBLIC_API_URL), {
+    const res = await fetch(new URL(`/api/products/${encodeURIComponent(slug)}`, env.API_SERVER_URL), {
       next: { revalidate: 30 },
       signal: AbortSignal.timeout(5000),
     });
@@ -58,7 +58,7 @@ export async function getProductBySlug(
 }
 export async function getProducts(query: Partial<ProductListQuery>): Promise<ProductListResponse | null> {
   try {
-    const url = new URL("/api/products", env.NEXT_PUBLIC_API_URL);
+    const url = new URL("/api/products", env.API_SERVER_URL);
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
     }

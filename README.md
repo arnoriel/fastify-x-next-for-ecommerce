@@ -159,6 +159,48 @@ Catatan mode toko tunggal: katalog **tidak** difilter per toko — asumsinya DB 
 
 Kode: cek fitur di UI via `features` / `withFeature()` / `requireFeature()` (`apps/web/src/lib/features.ts`); di API via `requireFeature()`, `whenFeature()`, `ensureSingleSeller()` (`apps/api/src/lib/features.ts`).
 
+## Deploy production (T-14)
+
+Stack production = `docker-compose.prod.yml`: **postgres + redis + migrate (sekali jalan) + api + web**. Dev tetap `npm run dev` + `apps/api/docker-compose.yml` (tidak berubah). Reverse proxy + SSL = T-25; sampai itu ada, taruh Nginx/Caddy/Cloudflare Tunnel di host yang meneruskan ke `127.0.0.1:3000` (web) dan `127.0.0.1:4000` (api).
+
+**Env terpisah per stage** — tiap stage satu file, tidak saling menimpa:
+
+| Stage | File | Catatan |
+|---|---|---|
+| dev | `apps/api/.env`, `apps/web/.env` (dari `.env.example`) | `npm run setup` |
+| staging | `.env.staging` (dari `.env.staging.example`) | `APP_ENV=staging`: boleh key sandbox Midtrans & `biteship_test.*`, port & volume terpisah |
+| production | `.env.production` (dari `.env.production.example`) | aturan live key penuh; variabel wajib kosong → compose berhenti dengan pesan jelas |
+
+**Deploy pertama (di server, butuh Docker Compose v2):**
+
+```bash
+cp .env.production.example .env.production   # isi semua variabel [WAJIB]
+npm run prod:config                          # validasi env file (tanpa menjalankan apa pun)
+npm run prod:up                              # build image + migrate DB + start semua service
+npm run prod:ps                              # semua service harus "healthy"
+curl http://127.0.0.1:4000/ready && curl http://127.0.0.1:3000/ready
+```
+
+Tanpa npm di server: `docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build`. Staging: ganti `--env-file .env.staging`.
+
+**Update rilis:** `git pull && npm run prod:up` (migrasi baru jalan otomatis lewat service `migrate`; bila gagal, `api` tidak start dan versi lama tetap berjalan). **Rollback:** set `IMAGE_TAG` ke tag lama lalu `prod:up`. Mengubah `NEXT_PUBLIC_API_URL` / `NEXT_IMAGE_HOSTS` = rebuild web (nilainya ter-inline saat build).
+
+**Health & readiness** (dipakai Docker `HEALTHCHECK`, `depends_on`, dan monitor eksternal):
+
+| Service | `/health` (liveness) | `/ready` (readiness) |
+|---|---|---|
+| api | proses hidup | Postgres + Redis terjangkau, else 503 |
+| web | proses hidup | API siap (lewat jaringan internal), else 503 |
+| postgres / redis | — | `pg_isready` / `redis-cli ping` |
+
+**Perilaku penting**
+- Semua service `restart: unless-stopped` → crash/`docker kill` otomatis hidup lagi. Tes: `docker kill <project>-api-1`, lalu `npm run prod:ps` beberapa detik kemudian. (`docker stop` manual sengaja tidak di-restart.)
+- Image ringan: API = satu bundle esbuild (tanpa `node_modules`, tanpa dev dependency), web = Next `standalone`; keduanya jalan sebagai user non-root. Env `.env*` tidak pernah masuk image (`.dockerignore`).
+- Postgres & Redis tidak dipublish ke host; log tiap container dirotasi (10 MB × 3).
+- Build di Apple Silicon untuk VPS amd64: `DOCKER_DEFAULT_PLATFORM=linux/amd64 npm run prod:up`.
+- Web ↔ API harus satu registrable domain (cookie `SameSite=Lax; Secure`), wajib https.
+- Seed dinonaktifkan di production. Sementara belum ada bootstrap admin, jadikan akun pertama admin manual: `docker compose --env-file .env.production -f docker-compose.prod.yml exec postgres psql -U ecommerce -d ecommerce -c "update users set role='admin' where email='kamu@contoh.com';"`.
+
 ## Env
 
 - `apps/api/.env` — `API_HOST`, `API_PORT`, `WEB_URL`, `DATABASE_URL`, `REDIS_URL` + variabel docker (`POSTGRES_*`, `REDIS_PORT`, `MEILI_*`) + `PUSHER_*` (T-09B, opsional di dev).

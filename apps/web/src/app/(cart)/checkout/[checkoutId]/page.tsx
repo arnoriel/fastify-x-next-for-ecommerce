@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 async function getCheckout(id: string) {
   const cookieHeader = (await cookies()).toString();
   try {
-    const res = await fetch(new URL(`/api/checkout/${id}`, env.NEXT_PUBLIC_API_URL), {
+    const res = await fetch(new URL(`/api/checkout/${id}`, env.API_SERVER_URL), {
       headers: { cookie: cookieHeader },
       cache: "no-store",
       signal: AbortSignal.timeout(5000),

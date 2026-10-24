@@ -1,0 +1,132 @@
+# Production / staging stack: postgres + redis + migrate (sekali jalan) + api + web.
+#
+#   cp .env.production.example .env.production   # isi nilainya
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+#
+# Staging di host yang sama: pakai .env.staging (COMPOSE_PROJECT_NAME & port berbeda → volume terpisah).
+# Postgres & Redis TIDAK dipublish ke host (hanya jaringan internal compose).
+# Port web/api di-bind ke 127.0.0.1 → taruh reverse proxy (Nginx/Caddy/Cloudflare Tunnel) di depannya (T-25).
+name: ${COMPOSE_PROJECT_NAME:-ecommerce-prod}
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" } # cegah log memenuhi disk VPS
+
+# Dipakai bersama oleh `api` dan `migrate` (env.ts API memvalidasi SEMUA variabel saat import).
+x-api-env: &api-env
+  NODE_ENV: production
+  APP_ENV: ${APP_ENV:-production}
+  API_HOST: 0.0.0.0
+  API_PORT: "4000"
+  WEB_URL: ${WEB_URL:?WEB_URL wajib diisi di env file}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-ecommerce}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wajib diisi di env file}@postgres:5432/${POSTGRES_DB:-ecommerce}
+  REDIS_URL: redis://redis:6379
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET wajib diisi di env file}
+  BETTER_AUTH_URL: ${BETTER_AUTH_URL:-${NEXT_PUBLIC_API_URL}}
+  API_PUBLIC_URL: ${API_PUBLIC_URL:-${NEXT_PUBLIC_API_URL}}
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?R2_ACCOUNT_ID wajib diisi di env file}
+  R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID wajib diisi di env file}
+  R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY wajib diisi di env file}
+  R2_BUCKET: ${R2_BUCKET:?R2_BUCKET wajib diisi di env file}
+  R2_PUBLIC_URL: ${R2_PUBLIC_URL:?R2_PUBLIC_URL wajib diisi di env file}
+  MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:?MIDTRANS_SERVER_KEY wajib diisi di env file}
+  MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY:?MIDTRANS_CLIENT_KEY wajib diisi di env file}
+  MIDTRANS_SANDBOX: ${MIDTRANS_SANDBOX:-false}
+  BITESHIP_API_KEY: ${BITESHIP_API_KEY:-}
+  BITESHIP_WEBHOOK_SECRET: ${BITESHIP_WEBHOOK_SECRET:-}
+  PUSHER_APP_ID: ${PUSHER_APP_ID:-}
+  PUSHER_KEY: ${PUSHER_KEY:-}
+  PUSHER_SECRET: ${PUSHER_SECRET:-}
+  PUSHER_CLUSTER: ${PUSHER_CLUSTER:-ap1}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wajib diisi di env file}
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # noeviction: wajib untuk BullMQ agar job tidak terhapus saat memori penuh
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
+  # Migrasi DB sekali jalan sebelum api start. Gagal → api tidak jalan (tidak pernah memakai schema setengah jadi).
+  migrate:
+    image: ${COMPOSE_PROJECT_NAME:-ecommerce-prod}-api:${IMAGE_TAG:-latest}
+    pull_policy: never # image dibangun oleh service `api`
+    command: ["node", "dist/migrate.mjs"]
+    restart: "no"
+    environment: *api-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    logging: *logging
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME:-ecommerce-prod}-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    environment: *api-env
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${API_HOST_PORT:-4000}:4000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *logging
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL wajib diisi di env file}
+        NEXT_IMAGE_HOSTS: ${NEXT_IMAGE_HOSTS:-}
+    image: ${COMPOSE_PROJECT_NAME:-ecommerce-prod}-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      # Fetch server-side Next → API lewat jaringan internal (bukan keluar ke internet lalu balik).
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${WEB_HOST_PORT:-3000}:3000"
+    depends_on:
+      api: { condition: service_healthy }
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *logging
+
+volumes:
+  postgres_data:
+  redis_data:

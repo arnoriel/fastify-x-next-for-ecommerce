@@ -16,7 +16,7 @@ export const getSession = cache(async (): Promise<SessionUser | null> => {
   if (!cookieHeader) return null;
 
   try {
-    const res = await fetch(new URL("/api/me", env.NEXT_PUBLIC_API_URL), {
+    const res = await fetch(new URL("/api/me", env.API_SERVER_URL), {
       headers: { cookie: cookieHeader },
       cache: "no-store",
       signal: AbortSignal.timeout(4000),
