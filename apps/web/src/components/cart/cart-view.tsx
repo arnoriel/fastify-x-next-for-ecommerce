@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect } from "react";
 import { FaCartShopping, FaMinus, FaPlus, FaTrash, FaTriangleExclamation } from "react-icons/fa6";
+import { isSingleSeller } from "@/lib/features";
 import { formatRupiah } from "@/lib/format";
 import { useCartStore } from "@/lib/cart-store";
 
@@ -36,7 +37,11 @@ export function CartView() {
     0,
   );
   const hasUnavailable = groups.some((g) => g.items.some((i) => !i.isAvailable));
-  const canCheckout = groups.length > 0 && !groups.every((g) => g.items.every((i) => !i.isAvailable));
+  // Mode toko tunggal: keranjang campuran (terbentuk sebelum flag dimatikan) harus dirapikan dulu.
+  const mixedSellers = isSingleSeller && groups.length > 1;
+  const showSellerHeader = !isSingleSeller || mixedSellers;
+  const canCheckout =
+    groups.length > 0 && !mixedSellers && !groups.every((g) => g.items.every((i) => !i.isAvailable));
 
   if (groups.length === 0) {
     return (
@@ -54,6 +59,12 @@ export function CartView() {
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-extrabold tracking-tight text-[var(--fg)]">Keranjang</h1>
 
+      {mixedSellers && (
+        <div className="alert" role="alert">
+          <FaTriangleExclamation aria-hidden />
+          <span>Toko ini hanya melayani satu penjual per keranjang. Hapus produk dari toko lain untuk melanjutkan checkout.</span>
+        </div>
+      )}
       {hasUnavailable && (
         <div className="alert">
           <FaTriangleExclamation aria-hidden />
@@ -69,12 +80,14 @@ export function CartView() {
 
       {groups.map((group) => (
         <div key={group.sellerId} className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <Link href={`/seller/${group.sellerSlug}`} className="font-semibold text-[var(--fg)] hover:underline">
-              {group.sellerName}
-            </Link>
-            <span className="muted small">{formatRupiah(group.subtotal)}</span>
-          </div>
+          {showSellerHeader && (
+            <div className="flex items-center justify-between">
+              <Link href={`/seller/${group.sellerSlug}`} className="font-semibold text-[var(--fg)] hover:underline">
+                {group.sellerName}
+              </Link>
+              <span className="muted small">{formatRupiah(group.subtotal)}</span>
+            </div>
+          )}
 
           <ul className="card">
             {group.items.map((item) => (

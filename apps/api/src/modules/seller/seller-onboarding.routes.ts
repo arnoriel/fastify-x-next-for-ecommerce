@@ -7,6 +7,7 @@ import {
   sellerOnboardingStatusSchema,
 } from "@ecommerce/shared";
 import { db, schema } from "../../db";
+import { requireFeature } from "../../lib/features";
 import { httpError } from "../../lib/http-error";
 import { presignSellerDocumentUpload } from "../../lib/storage";
 import { uniqueSlug } from "../../lib/slug";
@@ -31,7 +32,10 @@ function serializeStatus(seller: typeof schema.sellers.$inferSelect) {
 export const sellerOnboardingRoutes: FastifyPluginAsync = async (app) => {
   // ---------- Presign upload dokumen (KTP/NPWP) — dipanggil buyer sebelum submit form ----------
 
+  // Mode toko tunggal (multiSeller=false): pendaftaran toko baru ditutup. Status onboarding yang sudah
+  // ada (GET /status) & approve/reject admin tetap jalan agar pengajuan lama tidak menggantung.
   app.post("/api/sellers/onboarding/upload-url", { preHandler: requireAuth }, async (req) => {
+    requireFeature("multiSeller");
     const input = presignUploadRequestSchema.parse(req.body);
     return presignSellerDocumentUpload(req.user!.id, input);
   });
@@ -39,6 +43,7 @@ export const sellerOnboardingRoutes: FastifyPluginAsync = async (app) => {
   // ---------- Buyer submit form onboarding toko ----------
 
   app.post("/api/sellers/onboarding", { preHandler: requireAuth }, async (req, reply) => {
+    requireFeature("multiSeller");
     const input = sellerOnboardingSchema.parse(req.body);
     const userId = req.user!.id;
 

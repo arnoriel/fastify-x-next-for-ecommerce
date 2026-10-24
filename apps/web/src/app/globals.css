@@ -13,6 +13,7 @@
   --color-clay-surface: var(--clay-surface);
 }
 
+/* --brand, --brand-fg, --accent, --accent-fg: diinjeksi dari config/store.config.ts (lihat app/layout.tsx). */
 :root {
   --bg: #f6f5f3;
   --fg: #1c1b1a;
@@ -21,8 +22,6 @@
   --surface: #fbfaf9;
   --up: #15803d;
   --down: #b91c1c;
-  --accent: #1c1b1a;
-  --accent-fg: #f6f5f3;
   --border: rgb(28 27 26 / 0.14);
   --border-strong: rgb(28 27 26 / 0.28);
   --danger: #b91c1c;
@@ -41,8 +40,6 @@
   --glass-bg: rgb(255 255 255 / 0.55);
   --glass-border: rgb(255 255 255 / 0.6);
   --glass-blur: 16px;
-  --brand: #ff6a3d;
-  --brand-fg: #fff8f5;
   color-scheme: light dark;
 }
 
@@ -55,8 +52,6 @@
     --surface: #252220;
     --up: #4ade80;
     --down: #f87171;
-    --accent: #f2f0ed;
-    --accent-fg: #141312;
     --border: rgb(242 240 237 / 0.14);
     --border-strong: rgb(242 240 237 / 0.28);
     --danger: #f87171;
@@ -71,8 +66,6 @@
     --clay-shadow-dark-inset: rgb(0 0 0 / 0.4);
     --glass-bg: rgb(30 30 34 / 0.5);
     --glass-border: rgb(255 255 255 / 0.12);
-    --brand: #ff7c52;
-    --brand-fg: #1a0d08;
   }
 }
 

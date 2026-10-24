@@ -8,6 +8,7 @@ import {
   shippingRateRequestSchema,
 } from "@ecommerce/shared";
 import { db, schema } from "../../db";
+import { ensureSingleSeller, requireFeature } from "../../lib/features";
 import { httpError } from "../../lib/http-error";
 import { generateInvoiceNo, generateOrderNo } from "../../lib/order-number";
 import { shippingProvider } from "../../lib/shipping";
@@ -101,6 +102,10 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
     const input = createCheckoutSchema.parse(req.body);
     const userId = req.user!.id;
 
+    // Voucher dimatikan: tolak kode yang terkirim (mis. draft lama) daripada mengabaikannya diam-diam
+    // dan menagih harga penuh yang tidak diharapkan buyer.
+    if (input.platformVoucherCode || input.sellers.some((s) => s.voucherCode)) requireFeature("voucher");
+
     // T-06 [V3] idempotency: submit ganda (double-click, atau retry setelah redirect
     // login akibat session expired di tengah checkout) dengan key yang sama mengembalikan
     // checkout yang SUDAH dibuat, bukan membuat order duplikat kedua kalinya.
@@ -135,6 +140,7 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
     if (cartItems.length === 0) throw httpError(400, "CART_EMPTY", "Keranjang Anda kosong.");
 
     const bySeller = groupBySeller(cartItems);
+    ensureSingleSeller(bySeller.keys());
 
     // Setiap seller yang punya item di cart wajib punya pilihan kurir — cegah checkout parsial
     // yang membingungkan (sebagian toko checkout, sebagian tidak, tanpa buyer sadar).

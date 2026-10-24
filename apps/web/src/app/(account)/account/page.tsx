@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { features } from "@ecommerce/shared";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { requireUser } from "@/lib/session";
 
@@ -25,9 +26,11 @@ export default async function AccountPage() {
       <Link href="/orders" className="btn">
         Riwayat pesanan
       </Link>
-      <Link href="/wishlist" className="btn">
-        Wishlist
-      </Link>
+      {features.wishlist && (
+        <Link href="/wishlist" className="btn">
+          Wishlist
+        </Link>
+      )}
       <Link href="/disputes" className="btn">
         Laporan &amp; sengketa
       </Link>
@@ -41,7 +44,7 @@ export default async function AccountPage() {
           Dashboard toko
         </Link>
       )}
-      {user.role === "buyer" && (
+      {features.multiSeller && user.role === "buyer" && (
         <Link href="/seller/onboarding" className="btn-dashed">
           Buka toko
         </Link>

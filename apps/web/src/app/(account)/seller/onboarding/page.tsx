@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { sellerOnboardingStatusSchema } from "@ecommerce/shared";
 import { env } from "@/env";
+import { requireFeature } from "@/lib/features";
 import { requireUser } from "@/lib/session";
 import { SellerOnboardingForm } from "@/components/seller/seller-onboarding-form";
 
@@ -36,6 +37,9 @@ export default async function SellerOnboardingPage() {
   if (existing && existing.status !== "rejected") {
     redirect("/seller/onboarding/status");
   }
+
+  // Mode toko tunggal: pendaftaran toko baru ditutup (pengajuan lama tetap bisa dilihat di halaman status).
+  requireFeature("multiSeller");
 
   return <SellerOnboardingForm />;
 }

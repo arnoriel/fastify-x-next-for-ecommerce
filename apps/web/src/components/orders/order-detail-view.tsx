@@ -6,6 +6,7 @@ import { FaCircleCheck, FaTriangleExclamation } from "react-icons/fa6";
 import type { OrderDetail, OrderStatusValue } from "@ecommerce/shared";
 import { ChatStartButton } from "@/components/chat/chat-start-button";
 import { OrderReviewSection } from "@/components/review/order-review-section";
+import { sellerLabel } from "@/lib/features";
 import { confirmOrderReceived, getOrder } from "@/lib/order-api";
 import { formatRupiah } from "@/lib/format";
 import { TrackingTimeline } from "./tracking-timeline";
@@ -87,7 +88,7 @@ export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
       <section className="card">
         <div className="flex flex-wrap items-center justify-between gap-2 py-2">
           <div className="flex flex-col">
-            <h2 className="text-sm font-semibold text-[var(--fg)]">{order.sellerName}</h2>
+            <h2 className="text-sm font-semibold text-[var(--fg)]">{sellerLabel(order.sellerName)}</h2>
             <span className="muted small">{order.orderNo}</span>
           </div>
           <ChatStartButton

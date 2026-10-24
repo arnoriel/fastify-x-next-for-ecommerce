@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { FaCommentDots } from "react-icons/fa6";
 import type { StartConversationInput } from "@ecommerce/shared";
 import { startConversation } from "@/lib/chat-api";
+import { withFeature } from "@/lib/features";
 import { ApiError } from "@/lib/http";
 import { ChatThread } from "./chat-thread";
 
@@ -22,7 +23,7 @@ type Props = {
  * Tombol "Chat Penjual/Pembeli": membuat/membuka percakapan lalu membuka widget chat melayang di
  * halaman yang sama. Guest → login dulu dengan `next` kembali ke halaman ini.
  */
-export function ChatStartButton({ target, loginNext, label = "Chat Penjual", className = "btn-ghost" }: Props) {
+function ChatStartButtonImpl({ target, loginNext, label = "Chat Penjual", className = "btn-ghost" }: Props) {
   const router = useRouter();
   const panelId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -113,3 +114,5 @@ export function ChatStartButton({ target, loginNext, label = "Chat Penjual", cla
     </div>
   );
 }
+
+export const ChatStartButton = withFeature("chat", ChatStartButtonImpl);

@@ -9,6 +9,7 @@ import {
   userChannelName,
 } from "@ecommerce/shared";
 import { db, schema } from "../../db";
+import { requireFeature } from "../../lib/features";
 import { httpError } from "../../lib/http-error";
 import { realtimeConfig, signChannelAuth } from "../../lib/pusher";
 import { requireAuth } from "../../plugins/auth";
@@ -89,6 +90,7 @@ export const notificationRoutes: FastifyPluginAsync = async (app) => {
   app.post("/api/pusher/auth", { preHandler: requireAuth }, async (req) => {
     const { socketId, channelName } = pusherAuthRequestSchema.parse(req.body);
     const conversationId = parseConversationChannel(channelName);
+    if (conversationId) requireFeature("chat");
     const allowed = conversationId
       ? await isConversationParticipant(conversationId, req.user!.id)
       : channelName === userChannelName(req.user!.id);

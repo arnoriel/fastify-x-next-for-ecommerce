@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ChatThread } from "@/components/chat/chat-thread";
+import { requireFeature } from "@/lib/features";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Chat" };
 export const dynamic = "force-dynamic";
 
 export default async function ChatThreadPage({ params }: { params: Promise<{ id: string }> }) {
+  requireFeature("chat");
   const { id } = await params;
   await requireUser({ next: `/chat/${encodeURIComponent(id)}` });
 

@@ -1,12 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FaTriangleExclamation } from "react-icons/fa6";
-import type { Address, AvailableVoucher, CartGroup, CreateCheckoutInput, ShippingRate, VoucherPreview } from "@ecommerce/shared";
+import {
+  type Address,
+  type AvailableVoucher,
+  type CartGroup,
+  type CreateCheckoutInput,
+  features,
+  type ShippingRate,
+  type VoucherPreview,
+} from "@ecommerce/shared";
 import { listAddresses } from "@/lib/address-api";
 import { getShippingRates, submitCheckout } from "@/lib/cart-api";
 import { useCartStore } from "@/lib/cart-store";
+import { isSingleSeller } from "@/lib/features";
 import { formatRupiah } from "@/lib/format";
 import { ApiError } from "@/lib/http";
 import { listAvailableVouchers, validateVoucher } from "@/lib/voucher-api";
@@ -40,6 +50,14 @@ interface CheckoutDraft {
   platformVoucher: string;
 }
 
+/** Fitur voucher dimatikan setelah draft tersimpan → buang kode lama agar tidak ikut terkirim. */
+function withoutVouchers(draft: CheckoutDraft): CheckoutDraft {
+  const selections = Object.fromEntries(
+    Object.entries(draft.selections).map(([sellerId, sel]) => [sellerId, { ...sel, voucherCode: "" }]),
+  );
+  return { ...draft, selections, platformVoucher: "" };
+}
+
 /** T-06 [V3]: simpan pilihan alamat/kurir/voucher supaya kalau session expired di tengah
  * checkout dan buyer diarahkan ke login, setelah login balik ke checkout tanpa mengulang. */
 function saveDraft(draft: CheckoutDraft) {
@@ -55,7 +73,8 @@ function readDraft(): CheckoutDraft | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.sessionStorage.getItem(DRAFT_KEY);
-    return raw ? (JSON.parse(raw) as CheckoutDraft) : null;
+    const draft = raw ? (JSON.parse(raw) as CheckoutDraft) : null;
+    return draft && !features.voucher ? withoutVouchers(draft) : draft;
   } catch {
     return null;
   }
@@ -236,7 +255,7 @@ export function CheckoutView() {
   }, [hasLoaded, groups.length, revalidateVouchers]);
 
   useEffect(() => {
-    if (!hasLoaded || groups.length === 0) return;
+    if (!features.voucher || !hasLoaded || groups.length === 0) return;
     let cancelled = false;
     // Saran voucher bersifat tambahan: gagal memuat tidak mengganggu checkout (kode tetap bisa diketik).
     listAvailableVouchers()
@@ -277,7 +296,11 @@ export function CheckoutView() {
   const grandTotal = Math.max(0, subtotal + shippingTotal - discountTotal);
 
   const allSellersHaveCourier = groups.every((g) => selections[g.sellerId]?.courierCode);
-  const canSubmit = Boolean(addressId) && groups.length > 0 && allSellersHaveCourier && !ratesLoading && !submitting;
+  // Mode toko tunggal: keranjang campuran (terbentuk sebelum flag dimatikan) harus dirapikan di keranjang dulu.
+  const mixedSellers = isSingleSeller && groups.length > 1;
+  const showSellerHeader = !isSingleSeller || mixedSellers;
+  const canSubmit =
+    Boolean(addressId) && groups.length > 0 && !mixedSellers && allSellersHaveCourier && !ratesLoading && !submitting;
 
   async function handleSubmit() {
     if (!addressId) return;
@@ -338,6 +361,18 @@ export function CheckoutView() {
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-extrabold tracking-tight text-[var(--fg)]">Checkout</h1>
 
+      {mixedSellers && (
+        <div className="alert" role="alert">
+          <FaTriangleExclamation aria-hidden />
+          <span>
+            Toko ini hanya melayani satu penjual per keranjang. Kembali ke{" "}
+            <Link href="/cart" className="underline">
+              keranjang
+            </Link>{" "}
+            dan hapus produk dari toko lain.
+          </span>
+        </div>
+      )}
       {error && (
         <div className="alert">
           <FaTriangleExclamation aria-hidden />
@@ -390,7 +425,9 @@ export function CheckoutView() {
         const sel = selections[group.sellerId];
         return (
           <section key={group.sellerId} className="card">
-            <h2 className="py-2 text-sm font-semibold text-[var(--fg)]">{group.sellerName}</h2>
+            <h2 className="py-2 text-sm font-semibold text-[var(--fg)]">
+              {showSellerHeader ? group.sellerName : "Ringkasan pesanan"}
+            </h2>
             <ul className="!m-0 !p-0 !shadow-none">
               {availableItemsOf(group).map((item) => (
                 <li key={item.id}>
@@ -428,31 +465,35 @@ export function CheckoutView() {
               )}
             </div>
 
-            <VoucherField
-              label="Voucher toko (opsional)"
-              sellerId={group.sellerId}
-              applied={previews[sellerKey(group.sellerId)] ?? null}
-              suggestions={availableVouchers.filter((v) => v.scope === "seller" && v.sellerId === group.sellerId)}
-              externalError={voucherErrors[sellerKey(group.sellerId)]}
-              disabled={submitting}
-              onApplied={(preview) => setSellerVoucher(group.sellerId, preview)}
-              onRemoved={() => setSellerVoucher(group.sellerId, null)}
-            />
+            {features.voucher && (
+              <VoucherField
+                label="Voucher toko (opsional)"
+                sellerId={group.sellerId}
+                applied={previews[sellerKey(group.sellerId)] ?? null}
+                suggestions={availableVouchers.filter((v) => v.scope === "seller" && v.sellerId === group.sellerId)}
+                externalError={voucherErrors[sellerKey(group.sellerId)]}
+                disabled={submitting}
+                onApplied={(preview) => setSellerVoucher(group.sellerId, preview)}
+                onRemoved={() => setSellerVoucher(group.sellerId, null)}
+              />
+            )}
           </section>
         );
       })}
 
-      <section className="card">
-        <VoucherField
-          label="Voucher platform (opsional)"
-          applied={previews[PLATFORM_KEY] ?? null}
-          suggestions={availableVouchers.filter((v) => v.scope === "platform")}
-          externalError={voucherErrors[PLATFORM_KEY]}
-          disabled={submitting}
-          onApplied={setPlatformVoucherPreview}
-          onRemoved={() => setPlatformVoucherPreview(null)}
-        />
-      </section>
+      {features.voucher && (
+        <section className="card">
+          <VoucherField
+            label="Voucher platform (opsional)"
+            applied={previews[PLATFORM_KEY] ?? null}
+            suggestions={availableVouchers.filter((v) => v.scope === "platform")}
+            externalError={voucherErrors[PLATFORM_KEY]}
+            disabled={submitting}
+            onApplied={setPlatformVoucherPreview}
+            onRemoved={() => setPlatformVoucherPreview(null)}
+          />
+        </section>
+      )}
 
       <ul className="card">
         <li>

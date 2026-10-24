@@ -132,6 +132,33 @@ Endpoint: `GET /api/products/:slug/reviews` · `GET /api/orders/:id/reviews` · 
 
 Tidak ada migrasi baru dan tidak ada env/dependency baru (tabel `reviews`, `wishlists`, `vouchers` sudah dari T-02).
 
+## White-label (T-13)
+
+Semua branding, tema warna, kontak, dan feature flag ada di **satu file**: `packages/shared/src/config/store.config.ts`. Dibaca web **dan** api, divalidasi Zod saat start — nilai salah (hex tidak valid, email/WhatsApp salah format) = gagal cepat dengan daftar field bermasalah. Jangan taruh secret di sini (secret tetap di `.env`).
+
+| Field | Efek |
+|---|---|
+| `storeName`, `tagline`, `description` | Header beranda & app bar, judul tab (`Halaman · NamaToko`), meta description, footer |
+| `logoUrl` | Path di `apps/web/public` (mis. `/logo.svg`) atau URL https; `null` = nama toko sebagai teks |
+| `theme.light` / `theme.dark` | `brand`, `brandForeground`, `accent`, `accentForeground` (hex) → CSS variable `--brand`, `--brand-fg`, `--accent`, `--accent-fg` di seluruh UI + `theme-color` browser. Cek kontras teks vs warna sendiri (mis. WCAG ≥ 3:1) |
+| `contact` | `email`, `phone`, `whatsapp` (digit internasional, mis. `6281234567890`), `address` → footer beranda; `null` = disembunyikan |
+| `features` | `multiSeller`, `chat`, `wishlist`, `voucher` (default semua `true`) |
+
+**Reskin klien baru:** edit `store.config.ts` → restart `npm run dev` (production: rebuild) → selesai. Logo: taruh file di `apps/web/public/` lalu isi `logoUrl`.
+
+**Feature flag** — dijaga di dua lapis (UI + API), jadi mematikan lewat UI saja tidak cukup untuk "bocor" ke endpoint:
+
+| Flag `false` | UI | API |
+|---|---|---|
+| `chat` | Menu/badge Chat, tombol "Chat Penjual/Pembeli" hilang; `/chat*` → 404; tidak ada polling unread | `/api/chat/*` & channel chat Pusher → `403 FEATURE_DISABLED` |
+| `wishlist` | Ikon hati, link Wishlist hilang; `/wishlist` → 404; ID wishlist tidak dimuat | `/api/wishlist*` → `403 FEATURE_DISABLED` |
+| `voucher` | Kolom voucher toko & platform hilang di checkout; draft lama dibersihkan dari kode voucher | `/api/vouchers/*` → `403`; checkout yang membawa kode voucher ditolak (`403 FEATURE_DISABLED`), bukan diabaikan diam-diam |
+| `multiSeller` | **Mode toko tunggal**: tombol "Buka toko" & form onboarding hilang (`/seller/onboarding` → 404, halaman status pengajuan lama tetap ada); header per-toko di keranjang/checkout disembunyikan (satu alur checkout); nama penjual di pesanan = `storeName` | `POST /api/sellers/onboarding*` → `403`; item dari toko lain ditolak saat tambah ke keranjang (`409 SINGLE_SELLER_ONLY`), di merge cart guest dilewati; checkout dengan keranjang >1 toko ditolak |
+
+Catatan mode toko tunggal: katalog **tidak** difilter per toko — asumsinya DB klien hanya punya satu seller approved (seller lain tidak bisa mendaftar). Keranjang campuran yang sudah ada sebelum flag dimatikan ditandai di keranjang/checkout (header toko muncul lagi + pesan) sampai buyer menghapus produk dari toko lain. Tidak ada migrasi atau env baru.
+
+Kode: cek fitur di UI via `features` / `withFeature()` / `requireFeature()` (`apps/web/src/lib/features.ts`); di API via `requireFeature()`, `whenFeature()`, `ensureSingleSeller()` (`apps/api/src/lib/features.ts`).
+
 ## Env
 
 - `apps/api/.env` — `API_HOST`, `API_PORT`, `WEB_URL`, `DATABASE_URL`, `REDIS_URL` + variabel docker (`POSTGRES_*`, `REDIS_PORT`, `MEILI_*`) + `PUSHER_*` (T-09B, opsional di dev).

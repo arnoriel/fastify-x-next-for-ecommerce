@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync } from "fastify";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { addCartItemSchema, type CartGroup, type CartResponse, updateCartItemSchema } from "@ecommerce/shared";
+import { addCartItemSchema, type CartGroup, type CartResponse, features, updateCartItemSchema } from "@ecommerce/shared";
 import { db, schema } from "../../db";
+import { ensureSingleSeller } from "../../lib/features";
 import { httpError } from "../../lib/http-error";
 import { requireAuth } from "../../plugins/auth";
 
@@ -90,6 +91,15 @@ async function buildCartResponse(cartId: string): Promise<CartResponse> {
   return { groups, itemCount, subtotal };
 }
 
+/** Id seller dari semua item di cart — dasar pengecekan mode toko tunggal. */
+async function loadCartSellerIds(cartId: string): Promise<Set<string>> {
+  const items = await db.query.cartItems.findMany({
+    where: (ci, { eq: eqq }) => eqq(ci.cartId, cartId),
+    with: { variant: { with: { product: true } } },
+  });
+  return new Set(items.flatMap((i) => (i.variant?.product ? [i.variant.product.sellerId] : [])));
+}
+
 async function loadOwnedCartItem(cartId: string, itemId: string) {
   const item = await db.query.cartItems.findFirst({
     where: (ci, { and: andd, eq: eqq }) => andd(eqq(ci.id, itemId), eqq(ci.cartId, cartId)),
@@ -118,6 +128,9 @@ export const cartRoutes: FastifyPluginAsync = async (app) => {
     if (!variant.isActive || variant.product.status !== "active") {
       throw httpError(400, "VARIANT_UNAVAILABLE", "Varian ini sedang tidak tersedia.");
     }
+
+    // Mode toko tunggal: tolak item dari toko lain (tidak berpengaruh saat multiSeller aktif).
+    ensureSingleSeller([...(await loadCartSellerIds(cart.id)), variant.product.sellerId]);
 
     // Upsert: kalau varian sudah ada di cart, tambahkan qty (bukan duplicate row) — cap di stok
     // supaya add-to-cart berulang tidak bisa melewati stok riil.
@@ -194,12 +207,20 @@ export const cartRoutes: FastifyPluginAsync = async (app) => {
       where: (ci, { eq: eqq }) => eqq(ci.cartId, cart.id),
     });
     const existingByVariant = new Map(existingItems.map((i) => [i.variantId, i]));
+    // Mode toko tunggal: item guest dari toko lain dilewati (partial success, sama seperti item invalid).
+    const cartSellerIds = features.multiSeller ? null : await loadCartSellerIds(cart.id);
 
     for (const guestItem of input.items) {
       const variant = variantMap.get(guestItem.variantId);
       // Varian sudah dihapus/nonaktif sejak disimpan di guest cart → skip diam-diam, bukan
       // gagalkan merge (buyer sudah tidak bisa berbuat apa-apa soal item yang sudah invalid).
       if (!variant || !variant.product || variant.product.deletedAt || variant.product.status !== "active") continue;
+
+      if (cartSellerIds) {
+        const sellerId = variant.product.sellerId;
+        if (cartSellerIds.size > 0 && !cartSellerIds.has(sellerId)) continue;
+        cartSellerIds.add(sellerId);
+      }
 
       const existing = existingByVariant.get(guestItem.variantId);
       const desiredQty = Math.min((existing?.quantity ?? 0) + guestItem.quantity, variant.stock);

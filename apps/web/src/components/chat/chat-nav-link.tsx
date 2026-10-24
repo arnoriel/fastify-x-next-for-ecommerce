@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { FaCommentDots } from "react-icons/fa6";
 import { getChatUnread } from "@/lib/chat-api";
+import { withFeature } from "@/lib/features";
 import { ApiError } from "@/lib/http";
 import { usePolling } from "@/lib/use-polling";
 
@@ -14,7 +15,7 @@ const POLL_MS = 20_000;
  * Link ke daftar chat + badge total pesan belum dibaca (buyer & seller). Badge disegarkan tiap 20 dtk
  * saat tab terlihat dan setiap pindah halaman (mis. setelah membaca thread). Sesi habis → link disembunyikan.
  */
-export function ChatNavLink({ variant = "ghost" }: { variant?: "ghost" | "tab" }) {
+function ChatNavLinkImpl({ variant = "ghost" }: { variant?: "ghost" | "tab" }) {
   const pathname = usePathname();
   const [unread, setUnread] = useState(0);
   const [signedOut, setSignedOut] = useState(false);
@@ -58,3 +59,6 @@ export function ChatNavLink({ variant = "ghost" }: { variant?: "ghost" | "tab" }
     </Link>
   );
 }
+
+/** Fitur chat nonaktif → tidak dirender & tidak polling unread. */
+export const ChatNavLink = withFeature("chat", ChatNavLinkImpl);

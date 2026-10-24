@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type MouseEvent as ReactMouseEvent, useEffect, useState } from "react";
 import { FaHeart, FaRegHeart } from "react-icons/fa6";
+import { withFeature } from "@/lib/features";
 import { useWishlistStore } from "@/lib/wishlist-store";
 
 type Props = {
@@ -14,7 +15,7 @@ type Props = {
   className?: string;
 };
 
-export function WishlistButton({ productId, loggedIn, variant = "card", className = "" }: Props) {
+function WishlistButtonImpl({ productId, loggedIn, variant = "card", className = "" }: Props) {
   const router = useRouter();
   const ensureLoaded = useWishlistStore((s) => s.ensureLoaded);
   const setWishlisted = useWishlistStore((s) => s.setWishlisted);
@@ -94,3 +95,6 @@ export function WishlistButton({ productId, loggedIn, variant = "card", classNam
     </div>
   );
 }
+
+/** Fitur wishlist nonaktif → tombol hilang & ID wishlist tidak dimuat dari API. */
+export const WishlistButton = withFeature("wishlist", WishlistButtonImpl);

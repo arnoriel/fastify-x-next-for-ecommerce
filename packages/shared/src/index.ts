@@ -14,3 +14,4 @@ export * from "./seller";
 export * from "./seller-dashboard";
 export * from "./dispute";
 export * from "./admin";
+export * from "./config";

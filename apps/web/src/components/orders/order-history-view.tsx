@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { FaBoxOpen, FaTriangleExclamation } from "react-icons/fa6";
 import type { OrderListItem, OrderStatusValue } from "@ecommerce/shared";
+import { sellerLabel } from "@/lib/features";
 import { listOrders } from "@/lib/order-api";
 import { formatRupiah } from "@/lib/format";
 
@@ -87,7 +88,7 @@ export function OrderHistoryView() {
             <li key={order.id} className="card">
               <Link href={`/orders/${order.id}`} className="flex flex-col gap-2 p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-[var(--fg)]">{order.sellerName}</span>
+                  <span className="text-sm font-semibold text-[var(--fg)]">{sellerLabel(order.sellerName)}</span>
                   <span className="pill">{STATUS_LABEL[order.status]}</span>
                 </div>
                 <div className="flex items-center gap-3">

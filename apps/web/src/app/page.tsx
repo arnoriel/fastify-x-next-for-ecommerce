@@ -1,9 +1,11 @@
 import Link from "next/link";
-import type { ProductSort } from "@ecommerce/shared";
+import { features, type ProductSort, storeConfig } from "@ecommerce/shared";
 import { ChatNavLink } from "@/components/chat/chat-nav-link";
 import { CategoryBento } from "@/components/home/category-bento";
 import { ProductGrid } from "@/components/home/product-grid";
 import { SearchFilterBar } from "@/components/home/search-filter-bar";
+import { StoreBrand } from "@/components/layout/store-brand";
+import { StoreFooter } from "@/components/layout/store-footer";
 import { NotificationBell } from "@/components/notification/notification-bell";
 import { getCategories, getProducts } from "@/lib/api";
 import { getSession } from "@/lib/session";
@@ -48,11 +50,13 @@ export default async function HomePage({
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-extrabold tracking-tight text-[var(--fg)] sm:text-2xl">Ecommerce</h1>
-          <p className="muted small">Marketplace multi-vendor</p>
+          <h1 className="text-xl font-extrabold tracking-tight text-[var(--fg)] sm:text-2xl">
+            <StoreBrand />
+          </h1>
+          {storeConfig.tagline && <p className="muted small">{storeConfig.tagline}</p>}
         </div>
         <nav className="nav !mt-0 shrink-0 items-center">
-          {user && (
+          {user && features.wishlist && (
             <Link href="/wishlist" className="btn-ghost">
               Wishlist
             </Link>
@@ -89,6 +93,8 @@ export default async function HomePage({
       <SearchFilterBar categories={categories} />
 
       <ProductGrid result={products} loggedIn={Boolean(user)} />
+
+      <StoreFooter />
     </main>
   );
 }
