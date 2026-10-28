@@ -12,6 +12,7 @@ import {
   type SellerDashboardSummary,
   type OrderDisputeInfo,
   type SellerOrderCounts,
+  type ReturnSummary,
   type SellerOrderListResponse,
   type SellerOrdersQuery,
   sellerDashboardSummarySchema,
@@ -22,6 +23,7 @@ import { db, schema } from "../../db";
 import { lastDays, rangeStart } from "../../lib/jakarta-range";
 import { escapeLike } from "../../lib/sql";
 import { loadOrderDisputeInfos } from "../dispute/dispute.service";
+import { loadReturnSummaries } from "../return/return.service";
 import { FAILED_BOOKING_STATUSES } from "../shipping/shipping.service";
 
 const COUNTED = [...SALES_COUNTED_STATUSES];
@@ -42,6 +44,7 @@ async function countByTab(sellerId: string): Promise<SellerOrderCounts> {
     processing: sum(SELLER_ORDER_TAB_STATUSES.processing),
     shipped: sum(SELLER_ORDER_TAB_STATUSES.shipped),
     completed: sum(SELLER_ORDER_TAB_STATUSES.completed),
+    returns: sum(SELLER_ORDER_TAB_STATUSES.returns),
   };
 }
 
@@ -119,7 +122,11 @@ export async function getDashboardSummary(sellerId: string, range: DashboardRang
 
 type OrderWithItems = typeof schema.orders.$inferSelect & { items: (typeof schema.orderItems.$inferSelect)[] };
 
-function serializeSellerOrder(order: OrderWithItems, dispute: OrderDisputeInfo) {
+function serializeSellerOrder(
+  order: OrderWithItems,
+  dispute: OrderDisputeInfo,
+  returnRequest: ReturnSummary | null,
+) {
   const bookingActive = Boolean(order.biteshipOrderId) && !FAILED_BOOKING_STATUSES.has(order.shippingStatus ?? "");
   const a = order.shippingAddress;
 
@@ -153,6 +160,7 @@ function serializeSellerOrder(order: OrderWithItems, dispute: OrderDisputeInfo) 
     canCreateShipment: order.status === "paid" || (order.status === "processing" && !bookingActive),
     canMarkShipped: order.status === "processing" && bookingActive,
     dispute,
+    returnRequest,
     createdAt: order.createdAt.toISOString(),
     shippedAt: order.shippedAt ? order.shippedAt.toISOString() : null,
     completedAt: order.completedAt ? order.completedAt.toISOString() : null,
@@ -191,11 +199,14 @@ export async function listSellerOrders(
     }),
   ]);
 
-  // Tombol "Laporkan masalah" / "Lihat laporan" per kartu — 1 query untuk seluruh halaman.
-  const disputes = await loadOrderDisputeInfos(rows, "seller", sellerUserId);
+  // Tombol "Laporkan masalah" / "Lihat laporan" & data retur per kartu — 1 query per jenis.
+  const [disputes, returns] = await Promise.all([
+    loadOrderDisputeInfos(rows, "seller", sellerUserId),
+    loadReturnSummaries(rows.map((o) => o.id)),
+  ]);
 
   return sellerOrderListResponseSchema.parse({
-    items: rows.map((o) => serializeSellerOrder(o, disputes.get(o.id)!)),
+    items: rows.map((o) => serializeSellerOrder(o, disputes.get(o.id)!, returns.get(o.id) ?? null)),
     page: query.page,
     pageSize: query.pageSize,
     total: totalRows[0]?.count ?? 0,

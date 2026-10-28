@@ -91,3 +91,28 @@ export async function presignSellerDocumentUpload(
     expiresIn: PRESIGN_EXPIRES_SECONDS,
   };
 }
+
+/** Foto bukti retur (T-15) — hanya gambar, key di-path per order agar mudah diaudit. */
+export async function presignReturnEvidenceUpload(
+  buyerId: string,
+  orderId: string,
+  input: PresignUploadRequest,
+): Promise<PresignUploadResponse> {
+  const ext = EXT_BY_MIME[input.contentType];
+  const key = `returns/${buyerId}/${orderId}/${randomUUID()}.${ext}`;
+
+  const command = new PutObjectCommand({
+    Bucket: env.R2_BUCKET,
+    Key: key,
+    ContentType: input.contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: PRESIGN_EXPIRES_SECONDS });
+
+  return {
+    uploadUrl,
+    publicUrl: `${env.R2_PUBLIC_URL}/${key}`,
+    key,
+    expiresIn: PRESIGN_EXPIRES_SECONDS,
+  };
+}

@@ -13,5 +13,6 @@ export * from "./wishlist";
 export * from "./seller";
 export * from "./seller-dashboard";
 export * from "./dispute";
+export * from "./return";
 export * from "./admin";
 export * from "./config";

@@ -14,6 +14,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatusValue, string> = {
   completed: "Selesai",
   cancelled: "Dibatalkan",
   return_requested: "Retur diajukan",
+  refund_pending_manual: "Menunggu refund manual",
   refunded: "Dana dikembalikan",
 };
 
@@ -28,6 +29,8 @@ export const adminCountsSchema = z.object({
   pendingSellers: z.number(),
   activeDisputes: z.number(),
   needsReply: z.number(),
+  pendingReturns: z.number(),
+  refundQueue: z.number(),
 });
 export type AdminCounts = z.infer<typeof adminCountsSchema>;
 

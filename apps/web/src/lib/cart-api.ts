@@ -27,7 +27,7 @@ function jsonRequest(method: string, path: string, payload?: unknown) {
   return fetch(apiUrl(path), {
     method,
     credentials: "include",
-    headers: { "content-type": "application/json" },
+    headers: payload === undefined ? undefined : { "content-type": "application/json" },
     body: payload === undefined ? undefined : JSON.stringify(payload),
   });
 }

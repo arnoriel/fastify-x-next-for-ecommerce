@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { orderItemViewSchema, orderStatusSchema } from "./cart";
 import { orderDisputeInfoSchema } from "./dispute";
+import { orderEscrowInfoSchema, orderReturnInfoSchema } from "./return";
 
 // ---------- Order list & detail (T-06C) ----------
 
@@ -88,6 +89,9 @@ export const orderDetailSchema = z.object({
   canReview: z.boolean(),
   // T-10: tombol "Laporkan masalah" / "Lihat laporan" di detail order.
   dispute: orderDisputeInfoSchema,
+  // T-15: retur/refund & buyer protection window.
+  return: orderReturnInfoSchema,
+  escrow: orderEscrowInfoSchema,
   createdAt: z.iso.datetime(),
   shippedAt: z.iso.datetime().nullable(),
   deliveredAt: z.iso.datetime().nullable(),
@@ -95,7 +99,9 @@ export const orderDetailSchema = z.object({
 });
 export type OrderDetail = z.infer<typeof orderDetailSchema>;
 
-export const orderListItemSchema = orderDetailSchema.omit({ items: true, tracking: true, dispute: true }).extend({
+export const orderListItemSchema = orderDetailSchema
+  .omit({ items: true, tracking: true, dispute: true, return: true, escrow: true })
+  .extend({
   itemCount: z.number(),
   thumbnailUrl: z.string().nullable(),
 });

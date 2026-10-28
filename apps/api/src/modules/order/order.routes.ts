@@ -6,12 +6,14 @@ import {
   type OrderDisputeInfo,
   orderDetailSchema,
   orderListResponseSchema,
+  storeConfig,
 } from "@ecommerce/shared";
 import { db, schema } from "../../db";
 import { httpError } from "../../lib/http-error";
 import { requireAuth } from "../../plugins/auth";
 import { hasActiveDispute, loadOrderDisputeInfos } from "../dispute/dispute.service";
 import { createNotification } from "../notification/notification.service";
+import { getOrderReturnInfo, escrowView } from "../return/return.service";
 import { buildTracking, syncTrackingIfStale } from "../shipping/shipping.service";
 
 type OrderRow = NonNullable<Awaited<ReturnType<typeof loadOrder>>>;
@@ -68,7 +70,7 @@ function serializeSummary(order: OrderSummarySource) {
   };
 }
 
-function serializeDetail(order: OrderRow, dispute: OrderDisputeInfo) {
+async function serializeDetail(order: OrderRow, dispute: OrderDisputeInfo) {
   return orderDetailSchema.parse({
     ...serializeSummary(order),
     // Laporan aktif menahan konfirmasi: buyer menyelesaikan/membatalkan laporan dulu (dana tidak dilepas sepihak).
@@ -86,6 +88,8 @@ function serializeDetail(order: OrderRow, dispute: OrderDisputeInfo) {
       subtotal: i.subtotal,
     })),
     tracking: buildTracking(order),
+    return: await getOrderReturnInfo(order),
+    escrow: escrowView(order),
   });
 }
 
@@ -169,6 +173,7 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const now = new Date();
+      const protectionEndsAt = new Date(now.getTime() + storeConfig.protection.returnWindowDays * 86_400_000);
       // Buyer menyatakan barang diterima → pengiriman otomatis dianggap delivered (timeline tidak
       // berhenti di "Paket diambil kurir"). Webhook kurir yang telat setelah ini diabaikan (isStale).
       const closeShipment = Boolean(order.shippingStatus) && order.shippingStatus !== "delivered";
@@ -191,6 +196,11 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
           status: "completed",
           completedAt: now,
           deliveredAt: order.deliveredAt ?? now,
+          returnWindowEndsAt: protectionEndsAt,
+          escrowStatus: order.escrowStatus === "pending" ? "held" : order.escrowStatus,
+          escrowAmount: order.escrowStatus === "pending" ? order.total : order.escrowAmount,
+          escrowHeldAt: order.escrowStatus === "pending" ? now : order.escrowHeldAt,
+          escrowReleaseDueAt: protectionEndsAt,
           ...(closeShipment ? { shippingStatus: "delivered" } : {}),
         })
         .where(eq(schema.orders.id, id))

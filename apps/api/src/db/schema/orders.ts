@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { newId, timestamps } from "./_helpers";
 import { productVariants, products } from "./catalog";
-import { checkoutStatus, orderStatus } from "./enums";
+import { checkoutStatus, escrowStatus, orderStatus, refundMode, returnReason, returnStatus } from "./enums";
 import { sellers } from "./sellers";
 import { users } from "./users";
 import { vouchers } from "./vouchers";
@@ -92,10 +92,20 @@ export const orders = pgTable(
     shippedAt: timestamp("shipped_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    // T-15: escrow — dana ditahan sampai buyer protection window lewat / refund selesai.
+    escrowStatus: escrowStatus("escrow_status").notNull().default("pending"),
+    escrowAmount: integer("escrow_amount").notNull().default(0),
+    escrowHeldAt: timestamp("escrow_held_at", { withTimezone: true }),
+    escrowReleaseDueAt: timestamp("escrow_release_due_at", { withTimezone: true }),
+    escrowReleasedAt: timestamp("escrow_released_at", { withTimezone: true }),
+    escrowRefundedAt: timestamp("escrow_refunded_at", { withTimezone: true }),
+    // Retur masih diterima sampai waktu ini (diisi saat order completed).
+    returnWindowEndsAt: timestamp("return_window_ends_at", { withTimezone: true }),
     ...timestamps,
   },
   (t) => [
     uniqueIndex("orders_order_no_uq").on(t.orderNo),
+    index("orders_escrow_release_idx").on(t.escrowStatus, t.escrowReleaseDueAt),
     // Satu order per seller dalam satu checkout.
     uniqueIndex("orders_checkout_seller_uq").on(t.checkoutId, t.sellerId),
     // Lookup webhook Biteship (order_id Biteship → order kita). Partial: order tanpa shipment boleh banyak.
@@ -103,6 +113,55 @@ export const orders = pgTable(
     index("orders_user_idx").on(t.userId),
     index("orders_seller_status_idx").on(t.sellerId, t.status),
     check("orders_amounts_chk", sql`${t.subtotal} >= 0 and ${t.shippingCost} >= 0 and ${t.discount} >= 0 and ${t.total} >= 0`),
+    check("orders_escrow_amount_chk", sql`${t.escrowAmount} >= 0`),
+  ],
+);
+
+// Pengajuan retur/refund (T-15). Satu order maksimal satu retur; status order tetap sumber
+// kebenaran state machine, tabel ini menyimpan alasan, bukti, dan tujuan refund manual.
+export const orderReturns = pgTable(
+  "order_returns",
+  {
+    id: text("id").primaryKey().$defaultFn(newId),
+    returnNo: text("return_no").notNull(),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "restrict" }),
+    buyerId: text("buyer_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    sellerId: text("seller_id")
+      .notNull()
+      .references(() => sellers.id, { onDelete: "restrict" }),
+    status: returnStatus("status").notNull().default("requested"),
+    reason: returnReason("reason").notNull(),
+    description: text("description").notNull(),
+    evidenceUrls: text("evidence_urls").array().notNull().default(sql`'{}'::text[]`),
+    amount: integer("amount").notNull(),
+    // Tujuan refund manual — diisi buyer saat mengajukan.
+    refundBankName: text("refund_bank_name").notNull(),
+    refundAccountNumber: text("refund_account_number").notNull(),
+    refundAccountHolder: text("refund_account_holder").notNull(),
+    // Status order sebelum retur (dipulihkan bila retur ditolak/dibatalkan).
+    previousStatus: orderStatus("previous_status").notNull(),
+    reviewedBy: text("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    resolutionNote: text("resolution_note"),
+    refundMode: refundMode("refund_mode"),
+    refundReference: text("refund_reference"),
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("order_returns_no_uq").on(t.returnNo),
+    uniqueIndex("order_returns_order_uq").on(t.orderId),
+    index("order_returns_status_idx").on(t.status, t.createdAt),
+    index("order_returns_seller_idx").on(t.sellerId, t.status),
+    check("order_returns_amount_chk", sql`${t.amount} >= 0`),
+    check(
+      "order_returns_evidence_chk",
+      sql`array_length(${t.evidenceUrls}, 1) is null or array_length(${t.evidenceUrls}, 1) <= 3`,
+    ),
   ],
 );
 

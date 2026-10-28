@@ -50,6 +50,13 @@ const baseSchema = z.object({
     if (typeof v === "string") return v.toLowerCase() !== "false";
     return true;
   }, z.boolean().default(true)),
+  // T-15: coba refund otomatis via Midtrans saat retur disetujui. Default false = masuk antrian
+  // refund manual admin (beberapa metode bayar sandbox tidak mendukung refund API).
+  MIDTRANS_REFUND_ENABLED: z.preprocess((v) => {
+    if (typeof v === "boolean") return v;
+    if (typeof v === "string") return v.toLowerCase() === "true";
+    return false;
+  }, z.boolean().default(false)),
   // URL publik API yang bisa dijangkau Midtrans untuk webhook callback.
   // Di dev: gunakan ngrok/cloudflared tunnel. Di production: domain API kamu.
   // Default ke BETTER_AUTH_URL (atau API_HOST:API_PORT) kalau tidak diisi.

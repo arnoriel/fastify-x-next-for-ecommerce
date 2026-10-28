@@ -25,6 +25,7 @@ const EMPTY_MESSAGE: Record<SellerOrderTab, string> = {
   processing: "Tidak ada pesanan yang sedang diproses.",
   shipped: "Belum ada pesanan yang dikirim.",
   completed: "Belum ada pesanan selesai.",
+  returns: "Tidak ada pengajuan retur untuk toko ini.",
 };
 
 export function SellerOrdersView({ initialTab }: { initialTab: SellerOrderTab }) {

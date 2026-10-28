@@ -43,6 +43,13 @@
       "when": 1792220400000,
       "tag": "0005_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793190957009,
+      "tag": "0006_neat_magma",
+      "breakpoints": true
     }
   ]
 }

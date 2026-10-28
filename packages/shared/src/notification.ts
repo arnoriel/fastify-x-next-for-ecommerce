@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-export const NOTIFICATION_TYPES = ["order_status", "chat_message", "seller_status", "dispute_update"] as const;
+export const NOTIFICATION_TYPES = [
+  "order_status",
+  "chat_message",
+  "seller_status",
+  "dispute_update",
+  "return_update",
+] as const;
 export const notificationTypeSchema = z.enum(NOTIFICATION_TYPES);
 export type NotificationType = z.infer<typeof notificationTypeSchema>;
 

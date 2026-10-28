@@ -205,6 +205,42 @@ export async function createTransaction(params: {
  * Catatan: Midtrans membalas transaksi yang belum ada dengan HTTP 404 ATAU HTTP 200 + body
  * status_code "404" — keduanya dipetakan ke `{ found: false }`.
  */
+/**
+ * Refund penuh via Midtrans Core API (T-15). Hanya dipanggil bila `MIDTRANS_REFUND_ENABLED=true`.
+ * Beberapa metode bayar sandbox tidak mendukung refund API → caller WAJIB menyiapkan antrian manual.
+ */
+export async function requestRefund(params: {
+  orderId: string; // invoiceNo checkout
+  amount: number;
+  reason: string;
+  refundKey: string;
+}): Promise<{ ok: true; reference: string } | { ok: false; message: string }> {
+  if (params.amount < 1) return { ok: false, message: "nominal refund tidak valid" };
+
+  const res = await midtransFetch(`${CORE_URL}/${encodeURIComponent(params.orderId)}/refund`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      refund_key: params.refundKey,
+      amount: params.amount,
+      reason: params.reason.slice(0, 200),
+    }),
+  });
+  if (!res) return { ok: false, message: "Midtrans tidak terjangkau" };
+
+  const raw = await res.text().catch(() => "");
+  let data: { status_code?: string; status_message?: string } | null = null;
+  try {
+    data = JSON.parse(raw) as { status_code?: string; status_message?: string };
+  } catch {
+    data = null;
+  }
+  if (!res.ok || !data?.status_code?.startsWith("20")) {
+    return { ok: false, message: data?.status_message ?? raw.slice(0, 200) ?? `HTTP ${res.status}` };
+  }
+  return { ok: true, reference: params.refundKey };
+}
+
 export async function checkTransactionStatus(orderId: string): Promise<MidtransStatusResult> {
   const res = await midtransFetch(`${CORE_URL}/${encodeURIComponent(orderId)}/status`);
   if (!res) return null;

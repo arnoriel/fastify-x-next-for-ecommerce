@@ -14,6 +14,7 @@ const LINKS = [
   { href: "/admin/categories", label: "Kategori", exact: false, badge: null },
   { href: "/admin/orders", label: "Transaksi", exact: false, badge: null },
   { href: "/admin/disputes", label: "Sengketa", exact: false, badge: "needsReply" },
+  { href: "/admin/refunds", label: "Refund", exact: false, badge: "refundQueue" },
 ] as const;
 
 export function AdminNav({ userId }: { userId: string }) {
@@ -36,7 +37,13 @@ export function AdminNav({ userId }: { userId: string }) {
             {link.label}
             {count > 0 && (
               <span className={active ? "tab-count" : "tab-count tab-count-alert"}>
-                <span className="sr-only">{link.badge === "pendingSellers" ? "menunggu persetujuan: " : "perlu dibalas: "}</span>
+                <span className="sr-only">
+                  {link.badge === "pendingSellers"
+                    ? "menunggu persetujuan: "
+                    : link.badge === "refundQueue"
+                      ? "refund menunggu eksekusi: "
+                      : "perlu dibalas: "}
+                </span>
                 {count}
               </span>
             )}

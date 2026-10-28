@@ -2,7 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { SELLER_STATUS_LABELS, type SellerOrder } from "@ecommerce/shared";
+import {
+  RETURN_REASON_LABELS,
+  RETURN_STATUS_LABELS,
+  SELLER_STATUS_LABELS,
+  type SellerOrder,
+} from "@ecommerce/shared";
 import { ChatStartButton } from "@/components/chat/chat-start-button";
 import { formatDateTime, formatRupiah } from "@/lib/format";
 
@@ -96,6 +101,23 @@ export function SellerOrderCard({ order, busyAction, disabled, onAction }: Props
           </>
         )}
       </dl>
+
+      {order.returnRequest && (
+        <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--border)] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-semibold text-[var(--fg)]">Retur {order.returnRequest.returnNo}</span>
+            <span className="pill">{RETURN_STATUS_LABELS[order.returnRequest.status]}</span>
+          </div>
+          <p className="muted small mt-1">
+            {RETURN_REASON_LABELS[order.returnRequest.reason]} · {formatRupiah(order.returnRequest.amount)}
+          </p>
+          {(order.returnRequest.status === "requested" || order.returnRequest.status === "approved") && (
+            <Link href={`/seller/returns/${order.returnRequest.id}`} className="btn-ghost mt-3 inline-block w-fit">
+              {order.returnRequest.status === "requested" ? "Tinjau pengajuan retur" : "Lihat status refund"}
+            </Link>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-3">
         <div className="flex flex-col">

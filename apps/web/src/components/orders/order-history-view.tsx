@@ -17,6 +17,8 @@ const TABS: { label: string; value: OrderStatusValue | "all" }[] = [
   { label: "Diproses", value: "processing" },
   { label: "Dikirim", value: "shipped" },
   { label: "Selesai", value: "completed" },
+  { label: "Retur", value: "return_requested" },
+  { label: "Refund", value: "refund_pending_manual" },
   { label: "Dibatalkan", value: "cancelled" },
 ];
 
@@ -29,6 +31,7 @@ const STATUS_LABEL: Record<OrderStatusValue, string> = {
   completed: "Selesai",
   cancelled: "Dibatalkan",
   return_requested: "Retur diajukan",
+  refund_pending_manual: "Menunggu refund",
   refunded: "Dana dikembalikan",
 };
 

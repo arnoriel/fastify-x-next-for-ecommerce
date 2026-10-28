@@ -27,3 +27,7 @@ export function generateOrderNo(): string {
 export function generateDisputeTicketNo(): string {
   return `DSP-${datePart()}-${randomSuffix(5)}`;
 }
+
+export function generateReturnNo(): string {
+  return `RET-${datePart()}-${randomSuffix(5)}`;
+}

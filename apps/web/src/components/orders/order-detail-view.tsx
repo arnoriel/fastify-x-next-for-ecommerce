@@ -3,17 +3,30 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { FaCircleCheck, FaTriangleExclamation } from "react-icons/fa6";
-import type { OrderDetail, OrderStatusValue } from "@ecommerce/shared";
+import {
+  ESCROW_STATUS_LABELS,
+  type OrderDetail,
+  type OrderStatusValue,
+  RETURN_REASON_LABELS,
+  RETURN_STATUS_LABELS,
+} from "@ecommerce/shared";
 import { ChatStartButton } from "@/components/chat/chat-start-button";
 import { OrderReviewSection } from "@/components/review/order-review-section";
 import { sellerLabel } from "@/lib/features";
 import { confirmOrderReceived, getOrder } from "@/lib/order-api";
-import { formatRupiah } from "@/lib/format";
+import { cancelReturn } from "@/lib/return-api";
+import { formatDateTime, formatRupiah } from "@/lib/format";
 import { TrackingTimeline } from "./tracking-timeline";
 
 /** Interval refresh otomatis selama pesanan masih bergerak (server membatasi sinkron ke kurir tiap ≥3 menit). */
 const TRACKING_POLL_MS = 30_000;
-const POLLED_STATUSES: readonly OrderStatusValue[] = ["paid", "processing", "shipped"];
+const POLLED_STATUSES: readonly OrderStatusValue[] = [
+  "paid",
+  "processing",
+  "shipped",
+  "return_requested",
+  "refund_pending_manual",
+];
 
 const STATUS_LABEL: Record<OrderStatusValue, string> = {
   pending_payment: "Menunggu pembayaran",
@@ -24,18 +37,22 @@ const STATUS_LABEL: Record<OrderStatusValue, string> = {
   completed: "Selesai",
   cancelled: "Dibatalkan",
   return_requested: "Retur diajukan",
+  refund_pending_manual: "Menunggu refund",
   refunded: "Dana dikembalikan",
 };
 
 export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
   const [order, setOrder] = useState(initial);
   const [confirming, setConfirming] = useState(false);
+  const [cancellingReturn, setCancellingReturn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
 
   // T-08: perubahan status pengiriman (webhook Biteship) tampil tanpa buyer perlu reload manual.
   // Berhenti saat tab tersembunyi, pesanan sudah tidak bergerak, atau tracking sudah final.
-  const shouldPoll = POLLED_STATUSES.includes(order.status) && !order.tracking.isFinal;
+  const shouldPoll =
+    POLLED_STATUSES.includes(order.status) &&
+    (order.status === "return_requested" || order.status === "refund_pending_manual" || !order.tracking.isFinal);
   useEffect(() => {
     if (!shouldPoll) return;
     const timer = setInterval(() => {
@@ -46,6 +63,21 @@ export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
     }, TRACKING_POLL_MS);
     return () => clearInterval(timer);
   }, [shouldPoll, order.id]);
+
+  async function handleCancelReturn() {
+    const request = order.return.request;
+    if (!request || cancellingReturn) return;
+    setCancellingReturn(true);
+    setError(null);
+    try {
+      await cancelReturn(request.id);
+      setOrder(await getOrder(order.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal membatalkan pengajuan retur.");
+    } finally {
+      setCancellingReturn(false);
+    }
+  }
 
   async function handleConfirm() {
     setConfirming(true);
@@ -181,11 +213,70 @@ export function OrderDetailView({ order: initial }: { order: OrderDetail }) {
         </section>
       )}
 
+      {order.return.request && (
+        <section className="card !block !p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-[var(--fg)]">Retur & refund</h2>
+            <span className="pill">{RETURN_STATUS_LABELS[order.return.request.status]}</span>
+          </div>
+          <p className="muted small mt-1">
+            {order.return.request.returnNo} · {RETURN_REASON_LABELS[order.return.request.reason]} ·{" "}
+            {formatRupiah(order.return.request.amount)}
+          </p>
+          <p className="text-sm mt-1">{order.return.request.description}</p>
+          {order.return.request.resolutionNote && (
+            <p className="muted small mt-1">Catatan penjual/admin: {order.return.request.resolutionNote}</p>
+          )}
+          {order.return.request.refundReference && (
+            <p className="muted small mt-1">Referensi refund: {order.return.request.refundReference}</p>
+          )}
+          {order.return.canCancel && (
+            <button
+              type="button"
+              className="btn-ghost mt-3"
+              disabled={cancellingReturn}
+              onClick={() => void handleCancelReturn()}
+            >
+              {cancellingReturn ? "Membatalkan..." : "Batalkan pengajuan retur"}
+            </button>
+          )}
+        </section>
+      )}
+
+      {(order.return.windowEndsAt || order.escrow.status !== "pending") && (
+        <section className="card !block !p-4">
+          <h2 className="text-sm font-semibold text-[var(--fg)]">Perlindungan pembeli</h2>
+          <p className="muted small mt-1">{ESCROW_STATUS_LABELS[order.escrow.status]}</p>
+          {order.escrow.status === "held" && order.escrow.releaseAt && (
+            <p className="muted small">
+              Dana baru diteruskan ke penjual setelah {formatDateTime(order.escrow.releaseAt)}.
+            </p>
+          )}
+          {order.return.windowEndsAt && (
+            <p className="muted small">
+              Retur/komplain masih bisa diajukan sampai {formatDateTime(order.return.windowEndsAt)}.
+            </p>
+          )}
+        </section>
+      )}
+
       {order.canConfirmReceived && !confirmed && (
         <button type="button" className="btn" disabled={confirming} onClick={() => void handleConfirm()}>
           {confirming ? "Memproses..." : "Konfirmasi Terima Barang"}
         </button>
       )}
+
+      {order.return.canRequest && !order.return.request && (
+        <Link href={`/orders/${order.id}/return`} className="btn-ghost text-center">
+          Ajukan Retur
+        </Link>
+      )}
+      {!order.return.canRequest &&
+        !order.return.request &&
+        order.return.blockedReason &&
+        ["shipped", "delivered", "completed", "refund_pending_manual"].includes(order.status) && (
+          <p className="muted small text-center">{order.return.blockedReason}</p>
+        )}
 
       {order.dispute.canOpen && (
         <Link href={`/disputes/new?orderId=${encodeURIComponent(order.id)}`} className="btn-ghost text-center">

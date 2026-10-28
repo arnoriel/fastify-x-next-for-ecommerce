@@ -130,7 +130,18 @@ export async function applyPaymentStatus(
     // Hanya order yang masih menunggu bayar — jangan menimpa status order yang sudah berjalan.
     await tx
       .update(schema.orders)
-      .set({ status: next === "paid" ? "paid" : "cancelled", updatedAt: now })
+      .set({
+        status: next === "paid" ? "paid" : "cancelled",
+        // T-15: pembayaran diterima = dana masuk escrow, belum menjadi saldo seller.
+        ...(next === "paid"
+          ? {
+              escrowStatus: "held" as const,
+              escrowAmount: sql`${schema.orders.total}`,
+              escrowHeldAt: now,
+            }
+          : {}),
+        updatedAt: now,
+      })
       .where(and(eq(schema.orders.checkoutId, checkoutId), eq(schema.orders.status, "pending_payment")));
 
     if (next !== "paid") await releaseReservation(tx, checkoutId);

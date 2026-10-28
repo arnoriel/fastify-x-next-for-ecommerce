@@ -26,6 +26,15 @@ const featuresSchema = z.object({
   chat: z.boolean().default(true),
   wishlist: z.boolean().default(true),
   voucher: z.boolean().default(true),
+  /** false = tombol & endpoint retur/refund ditutup; order tetap bisa selesai normal. */
+  returns: z.boolean().default(true),
+});
+
+const protectionSchema = z.object({
+  /** Retur/komplain masih diterima selama N hari setelah order `completed`. */
+  returnWindowDays: z.number().int().min(1).max(30).default(3),
+  /** Order `delivered` tanpa konfirmasi buyer otomatis `completed` setelah N hari. */
+  autoCompleteDays: z.number().int().min(1).max(30).default(7),
 });
 
 export const storeConfigSchema = z.object({
@@ -52,7 +61,9 @@ export const storeConfigSchema = z.object({
       address: nullableText(200),
     })
     .default({ email: null, phone: null, whatsapp: null, address: null }),
-  features: featuresSchema.default({ multiSeller: true, chat: true, wishlist: true, voucher: true }),
+  features: featuresSchema.default({ multiSeller: true, chat: true, wishlist: true, voucher: true, returns: true }),
+  /** Buyer protection & auto-complete (T-15). */
+  protection: protectionSchema.default({ returnWindowDays: 3, autoCompleteDays: 7 }),
 });
 
 export type StoreConfigInput = z.input<typeof storeConfigSchema>;
@@ -60,6 +71,7 @@ export type StoreConfig = z.output<typeof storeConfigSchema>;
 export type StoreTheme = StoreConfig["theme"];
 export type StoreThemeMode = StoreTheme["light"];
 export type StoreFeatures = StoreConfig["features"];
+export type StoreProtection = StoreConfig["protection"];
 export type FeatureKey = keyof StoreFeatures;
 
 /** Validasi config; melempar satu pesan yang merinci semua field bermasalah. */

@@ -5,7 +5,7 @@ import { carts, cartItems } from "./carts";
 import { categories, productVariants, products } from "./catalog";
 import { disputeMessages, disputes } from "./disputes";
 import { conversations, messages, notifications, payouts, reviews, wishlists } from "./engagement";
-import { checkouts, orderItems, orderTrackingEvents, orders, voucherUsages } from "./orders";
+import { checkouts, orderItems, orderReturns, orderTrackingEvents, orders, voucherUsages } from "./orders";
 import { sellers } from "./sellers";
 import { users } from "./users";
 import { vouchers } from "./vouchers";
@@ -79,6 +79,14 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   items: many(orderItems),
   trackingEvents: many(orderTrackingEvents),
   disputes: many(disputes),
+  returnRequest: one(orderReturns, { fields: [orders.id], references: [orderReturns.orderId] }),
+}));
+
+export const orderReturnsRelations = relations(orderReturns, ({ one }) => ({
+  order: one(orders, { fields: [orderReturns.orderId], references: [orders.id] }),
+  buyer: one(users, { fields: [orderReturns.buyerId], references: [users.id] }),
+  seller: one(sellers, { fields: [orderReturns.sellerId], references: [sellers.id] }),
+  reviewer: one(users, { fields: [orderReturns.reviewedBy], references: [users.id] }),
 }));
 
 export const orderTrackingEventsRelations = relations(orderTrackingEvents, ({ one }) => ({

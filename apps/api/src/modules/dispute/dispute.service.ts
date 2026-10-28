@@ -111,6 +111,7 @@ const STATUS_BLOCK_MESSAGE: Partial<Record<OrderContext["status"], string>> = {
   cancelled: "Pesanan sudah dibatalkan.",
   refunded: "Dana pesanan sudah dikembalikan.",
   return_requested: "Pesanan sedang dalam proses retur.",
+  refund_pending_manual: "Refund pesanan sedang diproses admin.",
 };
 
 type EligibilityInput = {

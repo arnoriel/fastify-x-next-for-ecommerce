@@ -97,9 +97,10 @@ Login sebagai admin (`admin@ecommerce.test`, lihat seed) → tombol **Panel admi
 | `/admin/categories` | CRUD kategori bertingkat + atribut produk, aktif/nonaktif, hapus (diblokir bila masih ada produk/sub-kategori) |
 | `/admin/orders` | Monitoring transaksi (filter status, cari nomor pesanan/pembeli/toko), penanda pesanan bersengketa |
 | `/admin/disputes` | Antrian tiket sengketa (Aktif / Perlu dibalas / Selesai), balas, putuskan |
+| `/admin/refunds` | Antrian retur (Menunggu keputusan) & refund manual yang sudah disetujui; eksekusi + catat referensi refund |
 | `/disputes`, `/disputes/new?orderId=`, `/disputes/:id` | Sisi buyer & seller: ajukan laporan dari detail pesanan / kartu order seller, balas, batalkan |
 
-Aturan sengketa: satu tiket aktif per order (dijaga unique index DB), hanya buyer/seller order itu yang bisa melapor (order `paid`–`completed`; `completed` maksimal 14 hari), maks 5 tiket/24 jam per user, tiket yang sudah diputuskan admin tidak bisa dibuka ulang untuk order yang sama (dibatalkan pelapor boleh), dan **konfirmasi terima barang ditahan selama ada tiket aktif**. Keputusan admin hanya dicatat dan diberitahukan ke kedua pihak — eksekusi refund menyusul di task retur/refund.
+Aturan sengketa: satu tiket aktif per order (dijaga unique index DB), hanya buyer/seller order itu yang bisa melapor (order `paid`–`completed`; `completed` maksimal 14 hari), maks 5 tiket/24 jam per user, tiket yang sudah diputuskan admin tidak bisa dibuka ulang untuk order yang sama (dibatalkan pelapor boleh), dan **konfirmasi terima barang ditahan selama ada tiket aktif**. Keputusan admin hanya dicatat dan diberitahukan ke kedua pihak. Untuk pengembalian dana, gunakan alur retur/refund T-15 (lihat bagian selanjutnya).
 
 Setelah `git pull`/ganti project: `npm run db:migrate` (migrasi `0004_admin_panel`: tabel `disputes`, `dispute_messages`, kolom `sellers.document_url`, nilai notifikasi `dispute_update`). Tidak ada env baru.
 
@@ -142,7 +143,8 @@ Semua branding, tema warna, kontak, dan feature flag ada di **satu file**: `pack
 | `logoUrl` | Path di `apps/web/public` (mis. `/logo.svg`) atau URL https; `null` = nama toko sebagai teks |
 | `theme.light` / `theme.dark` | `brand`, `brandForeground`, `accent`, `accentForeground` (hex) → CSS variable `--brand`, `--brand-fg`, `--accent`, `--accent-fg` di seluruh UI + `theme-color` browser. Cek kontras teks vs warna sendiri (mis. WCAG ≥ 3:1) |
 | `contact` | `email`, `phone`, `whatsapp` (digit internasional, mis. `6281234567890`), `address` → footer beranda; `null` = disembunyikan |
-| `features` | `multiSeller`, `chat`, `wishlist`, `voucher` (default semua `true`) |
+| `features` | `multiSeller`, `chat`, `wishlist`, `voucher`, `returns` (default semua `true`) |
+| `protection` | `returnWindowDays` (default 3) & `autoCompleteDays` (default 7) — buyer protection window T-15 |
 
 **Reskin klien baru:** edit `store.config.ts` → restart `npm run dev` (production: rebuild) → selesai. Logo: taruh file di `apps/web/public/` lalu isi `logoUrl`.
 
@@ -153,6 +155,7 @@ Semua branding, tema warna, kontak, dan feature flag ada di **satu file**: `pack
 | `chat` | Menu/badge Chat, tombol "Chat Penjual/Pembeli" hilang; `/chat*` → 404; tidak ada polling unread | `/api/chat/*` & channel chat Pusher → `403 FEATURE_DISABLED` |
 | `wishlist` | Ikon hati, link Wishlist hilang; `/wishlist` → 404; ID wishlist tidak dimuat | `/api/wishlist*` → `403 FEATURE_DISABLED` |
 | `voucher` | Kolom voucher toko & platform hilang di checkout; draft lama dibersihkan dari kode voucher | `/api/vouchers/*` → `403`; checkout yang membawa kode voucher ditolak (`403 FEATURE_DISABLED`), bukan diabaikan diam-diam |
+| `returns` | Tombol "Ajukan Retur" & menu retur hilang; mencoba endpoint retur → 403 | `POST /api/orders/:id/returns` → `403 FEATURE_DISABLED`; retur lama tetap bisa ditinjau/direfund admin |
 | `multiSeller` | **Mode toko tunggal**: tombol "Buka toko" & form onboarding hilang (`/seller/onboarding` → 404, halaman status pengajuan lama tetap ada); header per-toko di keranjang/checkout disembunyikan (satu alur checkout); nama penjual di pesanan = `storeName` | `POST /api/sellers/onboarding*` → `403`; item dari toko lain ditolak saat tambah ke keranjang (`409 SINGLE_SELLER_ONLY`), di merge cart guest dilewati; checkout dengan keranjang >1 toko ditolak |
 
 Catatan mode toko tunggal: katalog **tidak** difilter per toko — asumsinya DB klien hanya punya satu seller approved (seller lain tidak bisa mendaftar). Keranjang campuran yang sudah ada sebelum flag dimatikan ditandai di keranjang/checkout (header toko muncul lagi + pesan) sampai buyer menghapus produk dari toko lain. Tidak ada migrasi atau env baru.
@@ -200,6 +203,29 @@ Tanpa npm di server: `docker compose --env-file .env.production -f docker-compos
 - Build di Apple Silicon untuk VPS amd64: `DOCKER_DEFAULT_PLATFORM=linux/amd64 npm run prod:up`.
 - Web ↔ API harus satu registrable domain (cookie `SameSite=Lax; Secure`), wajib https.
 - Seed dinonaktifkan di production. Sementara belum ada bootstrap admin, jadikan akun pertama admin manual: `docker compose --env-file .env.production -f docker-compose.prod.yml exec postgres psql -U ecommerce -d ecommerce -c "update users set role='admin' where email='kamu@contoh.com';"`.
+
+## Retur, refund & escrow (T-15)
+
+Alur: buyer mengajukan retur dari halaman detail order (tersedia setelah order `shipped`/`delivered`, dan sampai **buyer protection window** berakhir setelah `completed`) → order menjadi `return_requested` → penjual/admin menyetujui atau menolak → jika disetujui order menjadi `refund_pending_manual` → admin mengeksekusi refund dan menandainya selesai → order `refunded`.
+
+Dana pembeli **ditahan (escrow)** sejak pembayaran `paid`; saldo seller baru bertambah setelah:
+1. order `completed` (konfirmasi buyer atau auto-complete), **dan**
+2. `protection.returnWindowDays` hari lewat tanpa retur/sengketa aktif.
+
+Job sweep berjalan tiap menit di proses API (`modules/return/return.scheduler.ts`, aman multi-instance karena setiap transisi memakai row lock + guard status): auto-complete order `delivered` setelah `protection.autoCompleteDays`, auto-release escrow, dan mengunci retur setelah window lewat. `return_window_ends_at` + `escrow_release_due_at` disimpan di order agar bisa diaudit.
+
+| Halaman | Fungsi |
+|---|---|
+| `/orders/[id]` | Tombol **Ajukan Retur** (alternatif Konfirmasi Terima Barang), status retur, sisa window, status escrow |
+| `/orders/[id]/return` | Form retur: alasan, deskripsi, maks 3 foto bukti (upload R2), rekening tujuan refund manual |
+| `/seller/orders?tab=returns` → `/seller/returns/[id]` | Seller meninjau bukti & menyetujui/menolak retur |
+| `/admin/refunds` → `/admin/refunds/[id]` | Admin memutuskan retur, mengeksekusi refund manual, mencatat referensi |
+
+**Refund Midtrans:** Midtrans Core API menyediakan endpoint refund, tetapi dukungannya bergantung metode bayar & mode sandbox. Default aplikasi **tidak** memanggil refund otomatis — retur yang disetujui masuk antrian `refund_pending_manual` dan admin mengeksekusi transfer lalu mencatat referensinya (sesuai PRD V3). Untuk mengaktifkan percobaan refund otomatis, set `MIDTRANS_REFUND_ENABLED=true`; bila Midtrans menolak/tidak mendukung, retur otomatis tetap jatuh ke antrian manual (tidak pernah dianggap sukses palsu).
+
+Aturan: satu retur per order (unique index DB), retur ditolak/dibatalkan mengembalikan status order semula, retur tidak bisa diajukan bila ada sengketa aktif, dan total refund dibatasi nominal order (server-side, bukan input buyer). Tidak ada env wajib baru; migrasi `0006_neat_magma` menambah `order_returns`, kolom escrow/`return_window_ends_at`, dan nilai status `refund_pending_manual`.
+
+Endpoint: `POST /api/orders/:id/return/upload-url` · `POST /api/orders/:id/returns` · `GET /api/returns/:id` · `POST /api/returns/:id/cancel` · `GET/POST /api/seller/returns/:id/(approve|reject)` · `GET /api/admin/returns` · `GET /api/admin/returns/:id` · `POST /api/admin/returns/:id/(approve|reject|refund)`.
 
 ## Env
 

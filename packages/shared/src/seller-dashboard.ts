@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { type OrderStatusValue, orderStatusSchema } from "./cart";
 import { orderDisputeInfoSchema } from "./dispute";
+import { returnSummarySchema } from "./return";
 
 // ---------- Tab manajemen order seller (T-09) ----------
 
@@ -10,9 +11,10 @@ export const SELLER_ORDER_TAB_STATUSES = {
   processing: ["processing"],
   shipped: ["shipped", "delivered"],
   completed: ["completed"],
+  returns: ["return_requested", "refund_pending_manual", "refunded"],
 } as const;
 
-export const SELLER_ORDER_TABS = ["new", "processing", "shipped", "completed"] as const;
+export const SELLER_ORDER_TABS = ["new", "processing", "shipped", "completed", "returns"] as const;
 export const sellerOrderTabSchema = z.enum(SELLER_ORDER_TABS);
 export type SellerOrderTab = z.infer<typeof sellerOrderTabSchema>;
 
@@ -21,6 +23,7 @@ export const SELLER_ORDER_TAB_LABELS: Record<SellerOrderTab, string> = {
   processing: "Diproses",
   shipped: "Dikirim",
   completed: "Selesai",
+  returns: "Retur",
 };
 
 /** Label status order dari sudut pandang seller. */
@@ -33,6 +36,7 @@ export const SELLER_STATUS_LABELS: Record<OrderStatusValue, string> = {
   completed: "Selesai",
   cancelled: "Dibatalkan",
   return_requested: "Retur diajukan",
+  refund_pending_manual: "Menunggu refund manual",
   refunded: "Dana dikembalikan",
 };
 
@@ -44,6 +48,7 @@ export const sellerOrderCountsSchema = z.object({
   processing: z.number(),
   shipped: z.number(),
   completed: z.number(),
+  returns: z.number(),
 });
 export type SellerOrderCounts = z.infer<typeof sellerOrderCountsSchema>;
 
@@ -90,6 +95,8 @@ export const sellerOrderSchema = z.object({
   canMarkShipped: z.boolean(),
   // T-10: tombol "Laporkan masalah" / "Lihat laporan" di kartu order seller.
   dispute: orderDisputeInfoSchema,
+  // T-15: data retur untuk kartu order (termasuk tombol tinjau).
+  returnRequest: returnSummarySchema.nullable(),
   createdAt: z.iso.datetime(),
   shippedAt: z.iso.datetime().nullable(),
   completedAt: z.iso.datetime().nullable(),

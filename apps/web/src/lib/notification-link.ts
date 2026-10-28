@@ -33,6 +33,18 @@ export function resolveNotificationHref(n: Pick<NotificationView, "type" | "payl
         : `/disputes/${encodeURIComponent(disputeId)}`;
     }
 
+    case "return_update": {
+      const returnId = asString(n.payload.returnId);
+      if (n.payload.audience === "admin") {
+        return returnId ? `/admin/refunds/${encodeURIComponent(returnId)}` : "/admin/refunds";
+      }
+      if (n.payload.audience === "seller") {
+        return returnId ? `/seller/returns/${encodeURIComponent(returnId)}` : "/seller/orders?tab=returns";
+      }
+      const orderId = asString(n.payload.orderId);
+      return orderId ? `/orders/${encodeURIComponent(orderId)}` : "/orders";
+    }
+
     // T-11: payload { conversationId } → thread chat; tanpa id jatuh ke daftar chat.
     case "chat_message": {
       const conversationId = asString(n.payload.conversationId);

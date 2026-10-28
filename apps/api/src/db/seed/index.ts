@@ -233,6 +233,9 @@ async function main() {
         const paid = status !== "pending_payment" && status !== "cancelled";
         const addr = cities[seq % cities.length]!;
         const invoiceNo = `INV-2026-${String(seq).padStart(5, "0")}`;
+        const completedAt = status === "completed" ? new Date(Date.now() - 86_400_000) : null;
+        const protectionEndsAt = completedAt ? new Date(completedAt.getTime() + 3 * 86_400_000) : null;
+        const paidAt = paid ? faker.date.recent({ days: 20 }) : null;
 
         const [co] = await tx
           .insert(checkouts)
@@ -244,7 +247,7 @@ async function main() {
             shippingTotal: shipping,
             grandTotal: total,
             paymentMethod: paid ? "VA" : null,
-            paidAt: paid ? faker.date.recent({ days: 20 }) : null,
+            paidAt,
           })
           .returning();
 
@@ -268,7 +271,14 @@ async function main() {
             shippingCost: shipping,
             total,
             trackingNumber: ["shipped", "delivered", "completed"].includes(status) ? `JNE${faker.string.numeric(12)}` : null,
-            completedAt: status === "completed" ? faker.date.recent({ days: 5 }) : null,
+            deliveredAt: status === "delivered" || status === "completed" ? new Date(Date.now() - 86_400_000) : null,
+            completedAt,
+            // Escrow konsisten: order berbayar menahan dana; completed punya window retur 3 hari.
+            escrowStatus: paid ? "held" : "pending",
+            escrowAmount: paid ? total : 0,
+            escrowHeldAt: paid ? (paidAt ?? new Date()) : null,
+            returnWindowEndsAt: protectionEndsAt,
+            escrowReleaseDueAt: protectionEndsAt,
           })
           .returning();
 
@@ -374,10 +384,8 @@ async function main() {
           accountHolder: sellerUsers.find((u) => u.id === seller.userId)?.name ?? "Pemilik Toko",
         });
       }
-      await tx
-        .update(sellers)
-        .set({ balance: earned - payoutAmount })
-        .where(dsql`${sellers.id} = ${seller.id}`);
+      // Dana order completed masih di escrow (buyer protection), belum masuk saldo.
+      await tx.update(sellers).set({ balance: 0 }).where(dsql`${sellers.id} = ${seller.id}`);
     }
 
     console.log(

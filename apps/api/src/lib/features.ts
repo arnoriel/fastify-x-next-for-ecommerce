@@ -7,6 +7,7 @@ const FEATURE_LABEL: Record<FeatureKey, string> = {
   chat: "chat",
   wishlist: "wishlist",
   voucher: "voucher",
+  returns: "retur & refund",
 };
 
 /** Lempar 403 FEATURE_DISABLED bila fitur dimatikan di `store.config.ts`. */

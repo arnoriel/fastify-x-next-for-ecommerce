@@ -117,6 +117,7 @@ export const ORDER_STATUSES = [
   "completed",
   "cancelled",
   "return_requested",
+  "refund_pending_manual",
   "refunded",
 ] as const;
 export const orderStatusSchema = z.enum(ORDER_STATUSES);

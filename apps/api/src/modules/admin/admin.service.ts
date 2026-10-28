@@ -32,15 +32,19 @@ const NEEDS_REPLY = and(ACTIVE_DISPUTES, sql`${schema.disputes.lastMessageRole} 
 // ---------- Badge navigasi ----------
 
 export async function getAdminCounts(): Promise<AdminCounts> {
-  const [[pending], [active], [needsReply]] = await Promise.all([
+  const [[pending], [active], [needsReply], [pendingReturns], [refundQueue]] = await Promise.all([
     db.select({ n: count() }).from(schema.sellers).where(eq(schema.sellers.status, "pending")),
     db.select({ n: count() }).from(schema.disputes).where(ACTIVE_DISPUTES),
     db.select({ n: count() }).from(schema.disputes).where(NEEDS_REPLY),
+    db.select({ n: count() }).from(schema.orderReturns).where(eq(schema.orderReturns.status, "requested")),
+    db.select({ n: count() }).from(schema.orderReturns).where(eq(schema.orderReturns.status, "approved")),
   ]);
   return adminCountsSchema.parse({
     pendingSellers: pending?.n ?? 0,
     activeDisputes: active?.n ?? 0,
     needsReply: needsReply?.n ?? 0,
+    pendingReturns: pendingReturns?.n ?? 0,
+    refundQueue: refundQueue?.n ?? 0,
   });
 }
 

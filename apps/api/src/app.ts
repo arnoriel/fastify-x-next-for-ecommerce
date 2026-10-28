@@ -16,6 +16,8 @@ import { disputeRoutes } from "./modules/dispute/dispute.routes";
 import { notificationRoutes } from "./modules/notification/notification.routes";
 import { orderRoutes } from "./modules/order/order.routes";
 import { paymentRoutes } from "./modules/payment/payment.routes";
+import { returnRoutes } from "./modules/return/return.routes";
+import { startReturnScheduler } from "./modules/return/return.scheduler";
 import { reviewRoutes } from "./modules/review/review.routes";
 import { sellerDashboardRoutes } from "./modules/seller-dashboard/seller-dashboard.routes";
 import { sellerOnboardingRoutes } from "./modules/seller/seller-onboarding.routes";
@@ -60,6 +62,7 @@ export async function buildApp() {
   await app.register(cartRoutes);
   await app.register(checkoutRoutes);
   await app.register(orderRoutes);
+  await app.register(returnRoutes);
   await app.register(notificationRoutes);
   await app.register(whenFeature("chat", chatRoutes));
   await app.register(whenFeature("voucher", voucherRoutes));
@@ -71,6 +74,8 @@ export async function buildApp() {
   await app.register(sellerDashboardRoutes);
   await app.register(disputeRoutes);
   await app.register(adminRoutes);
+
+  startReturnScheduler(app);
 
   app.addHook("onClose", async () => {
     await Promise.allSettled([closeDb(), closeRedis()]);

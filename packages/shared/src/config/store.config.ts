@@ -38,6 +38,15 @@ export const storeConfig = defineStoreConfig({
     chat: true,
     wishlist: true,
     voucher: true,
+    returns: true,
+  },
+
+  // ---------- Buyer protection (T-15) ----------
+  protection: {
+    /** Retur/komplain masih bisa diajukan selama N hari setelah status `completed`. */
+    returnWindowDays: 3,
+    /** Order `delivered` otomatis `completed` setelah N hari tanpa konfirmasi buyer. */
+    autoCompleteDays: 7,
   },
 });
 
